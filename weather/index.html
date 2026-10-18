@@ -1,0 +1,297 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Weather</title>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Weather">
+<meta name="theme-color" content="#0f2742">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+<link rel="icon" href="icons/icon-192.png">
+<style>
+  :root {
+    --bg1: #0f2742; --bg2: #1f5a8a;
+    --card: rgba(255,255,255,0.12);
+    --line: rgba(255,255,255,0.16);
+    --text: #fff; --muted: rgba(255,255,255,0.68);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { min-height: 100%; background: linear-gradient(180deg, var(--bg1), var(--bg2)); background-color: var(--bg2); transition: background 0.6s; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+    color: var(--text);
+    -webkit-font-smoothing: antialiased;
+    -webkit-tap-highlight-color: transparent;
+    padding: calc(env(safe-area-inset-top) + 12px) 16px calc(env(safe-area-inset-bottom) + 24px);
+  }
+  html.night { --bg1: #05080f; --bg2: #1b2440; }
+  html.rain  { --bg1: #2b3440; --bg2: #4d5b6b; }
+  html.snow  { --bg1: #5b6f86; --bg2: #a7b8c9; }
+  html.storm { --bg1: #1a1626; --bg2: #3a3550; }
+
+  .top { display: flex; gap: 8px; align-items: center; }
+  .top form { flex: 1; display: flex; min-width: 0; }
+  .top input {
+    flex: 1; min-width: 0; font: inherit; font-size: 16px; color: var(--text);
+    background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+    padding: 10px 12px; outline: none;
+  }
+  .top input::placeholder { color: var(--muted); }
+  .btn {
+    font: inherit; font-size: 15px; color: var(--text); background: var(--card);
+    border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; min-width: 44px;
+  }
+  .btn:active { opacity: 0.6; }
+
+  .hero { text-align: center; padding: 28px 0 20px; }
+  .place { font-size: 28px; font-weight: 500; }
+  .temp { font-size: 96px; font-weight: 200; line-height: 1; margin: 4px 0 2px; letter-spacing: -2px; }
+  .cond { font-size: 20px; }
+  .hilo { color: var(--muted); font-size: 17px; margin-top: 4px; }
+  .updated { color: var(--muted); font-size: 12px; margin-top: 8px; }
+
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 12px 14px; margin-top: 12px; }
+  .card h2 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600; color: var(--muted); padding-bottom: 8px; border-bottom: 1px solid var(--line); }
+
+  .hours { display: flex; overflow-x: auto; gap: 18px; padding: 10px 2px 4px; scrollbar-width: none; }
+  .hours::-webkit-scrollbar { display: none; }
+  .hour { flex: 0 0 auto; text-align: center; font-size: 15px; }
+  .hour .ic { font-size: 22px; margin: 6px 0; }
+  .hour .p { font-size: 11px; color: #9fd3ff; height: 13px; }
+
+  .day { display: grid; grid-template-columns: 52px 32px 38px 1fr 38px; align-items: center; gap: 8px; padding: 9px 0; border-bottom: 1px solid var(--line); font-size: 17px; }
+  .day:last-child { border-bottom: 0; }
+  .day .ic { font-size: 20px; text-align: center; }
+  .day .lo { color: var(--muted); text-align: right; }
+  .bar { height: 5px; border-radius: 3px; background: rgba(0,0,0,0.25); position: relative; }
+  .bar i { position: absolute; top: 0; bottom: 0; border-radius: 3px; background: linear-gradient(90deg, #7cc4ff, #ffd36b, #ff8a5c); }
+
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .grid .card { margin-top: 12px; }
+  .metric { font-size: 26px; font-weight: 400; padding-top: 8px; }
+  .sub { font-size: 13px; color: var(--muted); margin-top: 4px; }
+
+  .msg { text-align: center; color: var(--muted); padding: 40px 12px; font-size: 16px; line-height: 1.5; }
+  .credit { text-align: center; color: var(--muted); font-size: 11px; margin-top: 18px; }
+  .credit a { color: var(--muted); }
+  .spin { display: inline-block; animation: spin 1s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+  <div class="top">
+    <form id="searchForm" autocomplete="off">
+      <input id="q" type="search" placeholder="Search city" enterkeyhint="search">
+    </form>
+    <button class="btn" id="locBtn" aria-label="Use my location">📍</button>
+    <button class="btn" id="unitBtn" aria-label="Toggle units">°F</button>
+  </div>
+
+  <main id="app"><div class="msg">Loading…</div></main>
+
+  <div class="credit">Data: <a href="https://open-meteo.com/">Open-Meteo.com</a></div>
+
+<script>
+'use strict';
+
+/* ---------- Settings (persisted in localStorage) ---------- */
+const store = {
+  get(k, d) { try { const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch { return d; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} }
+};
+let units = store.get('units', 'F');          // 'F' or 'C'
+let place = store.get('place', null);         // {name, lat, lon}
+
+const $ = id => document.getElementById(id);
+const app = $('app');
+
+/* ---------- WMO weather code -> text + icon ---------- */
+const WMO = {
+  0:['Clear','☀️','🌙'], 1:['Mostly Clear','🌤️','🌙'], 2:['Partly Cloudy','⛅','☁️'], 3:['Cloudy','☁️','☁️'],
+  45:['Fog','🌫️'], 48:['Freezing Fog','🌫️'],
+  51:['Light Drizzle','🌦️'], 53:['Drizzle','🌦️'], 55:['Heavy Drizzle','🌧️'],
+  56:['Freezing Drizzle','🌧️'], 57:['Freezing Drizzle','🌧️'],
+  61:['Light Rain','🌦️'], 63:['Rain','🌧️'], 65:['Heavy Rain','🌧️'],
+  66:['Freezing Rain','🌧️'], 67:['Freezing Rain','🌧️'],
+  71:['Light Snow','🌨️'], 73:['Snow','🌨️'], 75:['Heavy Snow','❄️'], 77:['Snow Grains','🌨️'],
+  80:['Showers','🌦️'], 81:['Showers','🌧️'], 82:['Heavy Showers','🌧️'],
+  85:['Snow Showers','🌨️'], 86:['Snow Showers','❄️'],
+  95:['Thunderstorm','⛈️'], 96:['Thunderstorm','⛈️'], 99:['Thunderstorm','⛈️']
+};
+const wText = c => (WMO[c] || ['—'])[0];
+const wIcon = (c, day = true) => { const w = WMO[c] || ['—','❔']; return (!day && w[2]) ? w[2] : w[1]; };
+function theme(code, day) {
+  let t = '';
+  if (code >= 95) t = 'storm';
+  else if ((code >= 71 && code <= 77) || code === 85 || code === 86) t = 'snow';
+  else if (code >= 51) t = 'rain';
+  else if (!day) t = 'night';
+  document.documentElement.className = t;
+}
+
+/* ---------- Data ---------- */
+async function fetchForecast(lat, lon) {
+  const p = new URLSearchParams({
+    latitude: lat, longitude: lon, timezone: 'auto', forecast_days: 7,
+    temperature_unit: units === 'F' ? 'fahrenheit' : 'celsius',
+    wind_speed_unit: units === 'F' ? 'mph' : 'kmh',
+    precipitation_unit: units === 'F' ? 'inch' : 'mm',
+    current: 'temperature_2m,apparent_temperature,relative_humidity_2m,weather_code,is_day,wind_speed_10m,wind_direction_10m,precipitation',
+    hourly: 'temperature_2m,weather_code,precipitation_probability,is_day',
+    daily: 'weather_code,temperature_2m_max,temperature_2m_min,sunrise,sunset,uv_index_max,precipitation_probability_max'
+  });
+  const r = await fetch('https://api.open-meteo.com/v1/forecast?' + p);
+  if (!r.ok) throw new Error('Forecast request failed (' + r.status + ')');
+  return r.json();
+}
+
+async function geocode(name) {
+  const r = await fetch('https://geocoding-api.open-meteo.com/v1/search?count=1&language=en&format=json&name=' + encodeURIComponent(name));
+  const j = await r.json();
+  if (!j.results || !j.results.length) throw new Error('No place found for "' + name + '"');
+  const g = j.results[0];
+  return { name: [g.name, g.admin1 || g.country].filter(Boolean).join(', '), lat: g.latitude, lon: g.longitude };
+}
+
+async function reverseName(lat, lon) {
+  // Open-Meteo has no reverse geocoding; BigDataCloud's client endpoint is free and keyless.
+  try {
+    const r = await fetch(`https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lon}&localityLanguage=en`);
+    const j = await r.json();
+    return [j.city || j.locality, j.principalSubdivision].filter(Boolean).join(', ') || 'My Location';
+  } catch { return 'My Location'; }
+}
+
+function locate() {
+  return new Promise((res, rej) => {
+    if (!navigator.geolocation) return rej(new Error('Location not available'));
+    navigator.geolocation.getCurrentPosition(
+      p => res({ lat: p.coords.latitude, lon: p.coords.longitude }),
+      e => rej(new Error(e.code === 1 ? 'Location permission denied. Search for a city instead.' : 'Could not get your location.')),
+      { enableHighAccuracy: false, timeout: 10000, maximumAge: 10 * 60 * 1000 }
+    );
+  });
+}
+
+/* ---------- Render ---------- */
+const deg = v => Math.round(v) + '°';
+const hhmm = iso => new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+const compass = d => ['N','NE','E','SE','S','SW','W','NW'][Math.round(d / 45) % 8];
+
+function render(d, name, fetchedAt) {
+  const c = d.current, dy = d.daily, h = d.hourly;
+  theme(c.weather_code, c.is_day);
+
+  // Next 24 hours starting at the current hour
+  const nowIdx = Math.max(0, h.time.findIndex(t => t >= c.time.slice(0, 13)));
+  const hours = h.time.slice(nowIdx, nowIdx + 24).map((t, i) => {
+    const k = nowIdx + i, pp = h.precipitation_probability[k];
+    return `<div class="hour"><div>${i === 0 ? 'Now' : new Date(t).toLocaleTimeString([], { hour: 'numeric' })}</div>
+      <div class="ic">${wIcon(h.weather_code[k], h.is_day[k])}</div>
+      <div class="p">${pp >= 20 ? pp + '%' : ''}</div><div>${deg(h.temperature_2m[k])}</div></div>`;
+  }).join('');
+
+  const wkLo = Math.min(...dy.temperature_2m_min), wkHi = Math.max(...dy.temperature_2m_max), span = (wkHi - wkLo) || 1;
+  const days = dy.time.map((t, i) => {
+    const lo = dy.temperature_2m_min[i], hi = dy.temperature_2m_max[i];
+    const L = (lo - wkLo) / span * 100, W = (hi - lo) / span * 100;
+    const label = i === 0 ? 'Today' : new Date(t + 'T12:00').toLocaleDateString([], { weekday: 'short' });
+    return `<div class="day"><div>${label}</div><div class="ic">${wIcon(dy.weather_code[i])}</div>
+      <div class="lo">${deg(lo)}</div><div class="bar"><i style="left:${L}%;width:${Math.max(W, 4)}%"></i></div><div>${deg(hi)}</div></div>`;
+  }).join('');
+
+  const sp = units === 'F' ? 'mph' : 'km/h';
+  app.innerHTML = `
+    <section class="hero">
+      <div class="place">${escapeHtml(name)}</div>
+      <div class="temp">${deg(c.temperature_2m)}</div>
+      <div class="cond">${wText(c.weather_code)}</div>
+      <div class="hilo">H:${deg(dy.temperature_2m_max[0])}  L:${deg(dy.temperature_2m_min[0])}</div>
+      <div class="updated">Updated ${new Date(fetchedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</div>
+    </section>
+    <section class="card"><h2>Hourly</h2><div class="hours">${hours}</div></section>
+    <section class="card"><h2>7-Day Forecast</h2>${days}</section>
+    <div class="grid">
+      <section class="card"><h2>Feels Like</h2><div class="metric">${deg(c.apparent_temperature)}</div></section>
+      <section class="card"><h2>Humidity</h2><div class="metric">${c.relative_humidity_2m}%</div></section>
+      <section class="card"><h2>Wind</h2><div class="metric">${Math.round(c.wind_speed_10m)} ${sp}</div><div class="sub">from ${compass(c.wind_direction_10m)}</div></section>
+      <section class="card"><h2>UV Index</h2><div class="metric">${Math.round(dy.uv_index_max[0])}</div><div class="sub">today's max</div></section>
+      <section class="card"><h2>Sunrise</h2><div class="metric">${hhmm(dy.sunrise[0])}</div></section>
+      <section class="card"><h2>Sunset</h2><div class="metric">${hhmm(dy.sunset[0])}</div></section>
+    </div>`;
+}
+
+function showMsg(text) { app.innerHTML = `<div class="msg">${escapeHtml(text)}</div>`; }
+function escapeHtml(s) { return String(s).replace(/[&<>"']/g, ch => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[ch])); }
+
+/* ---------- Flow ---------- */
+async function load() {
+  if (!place) return showMsg('Tap 📍 to use your location, or search for a city.');
+  // Show cached data instantly, then refresh
+  const cached = store.get('cache', null);
+  if (cached && cached.units === units && cached.lat === place.lat && cached.lon === place.lon) {
+    render(cached.data, place.name, cached.at);
+  } else if (!app.querySelector('.hero')) {
+    app.innerHTML = '<div class="msg"><span class="spin">◌</span></div>';
+  }
+  try {
+    const data = await fetchForecast(place.lat, place.lon);
+    const at = Date.now();
+    store.set('cache', { units, lat: place.lat, lon: place.lon, at, data });
+    render(data, place.name, at);
+  } catch (e) {
+    if (!cached) showMsg(navigator.onLine ? e.message : 'You are offline and no forecast is saved yet.');
+  }
+}
+
+async function useMyLocation() {
+  showMsg('Finding your location…');
+  try {
+    const { lat, lon } = await locate();
+    place = { name: await reverseName(lat, lon), lat, lon, auto: true };
+    store.set('place', place);
+    load();
+  } catch (e) { showMsg(e.message); }
+}
+
+$('searchForm').addEventListener('submit', async ev => {
+  ev.preventDefault();
+  const q = $('q').value.trim();
+  if (!q) return;
+  $('q').blur();
+  try {
+    place = await geocode(q);
+    store.set('place', place);
+    $('q').value = '';
+    load();
+  } catch (e) { showMsg(e.message); }
+});
+
+$('locBtn').addEventListener('click', useMyLocation);
+
+$('unitBtn').textContent = '°' + units;
+$('unitBtn').addEventListener('click', () => {
+  units = units === 'F' ? 'C' : 'F';
+  store.set('units', units);
+  $('unitBtn').textContent = '°' + units;
+  load();
+});
+
+// Refresh when the app comes back to the foreground (iOS doesn't run web apps in the background)
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState !== 'visible') return;
+  const c = store.get('cache', null);
+  if (!c || Date.now() - c.at > 10 * 60 * 1000) load();
+});
+
+if (place) load();
+else useMyLocation();
+
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js');
+</script>
+</body>
+</html>

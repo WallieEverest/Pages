@@ -1,0 +1,42 @@
+# Rebuilds slideshow/photos.json whenever photos are added, removed or renamed.
+# Captions you typed into photos.json are kept; new photos get a caption from the filename.
+name: Update photo list
+
+on:
+  push:
+    paths:
+      - 'slideshow/photos/**'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Rebuild photos.json
+        run: |
+          python3 - <<'EOF'
+          import json, os
+          path = 'slideshow/photos.json'
+          exts = ('.jpg', '.jpeg', '.png', '.webp', '.gif', '.heic', '.avif')
+          try:
+              old = {p['src']: p for p in json.load(open(path)) if isinstance(p, dict)}
+          except Exception:
+              old = {}
+          files = sorted(f for f in os.listdir('slideshow/photos') if f.lower().endswith(exts))
+          out = [old.get('photos/' + f, {'src': 'photos/' + f}) for f in files]
+          with open(path, 'w') as fh:
+              fh.write('[\n' + ',\n'.join('  ' + json.dumps(p) for p in out) + '\n]\n')
+          print(f'{len(out)} photos')
+          EOF
+
+      - name: Commit if changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add slideshow/photos.json
+          git diff --cached --quiet || (git commit -m "Update photo list" && git push)

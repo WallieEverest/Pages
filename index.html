@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>My Apps</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+    background: #f2f2f7; color: #111; padding: calc(env(safe-area-inset-top) + 24px) 16px 32px;
+    max-width: 560px; margin: 0 auto;
+  }
+  @media (prefers-color-scheme: dark) { body { background: #000; color: #f2f2f7; } .app, .how { background: #1c1c1e !important; } .how { color: #aaa !important; } }
+  h1 { font-size: 32px; margin-bottom: 18px; }
+  .app { display: flex; align-items: center; gap: 14px; background: #fff; border-radius: 16px; padding: 14px; margin-bottom: 12px; text-decoration: none; color: inherit; }
+  .app img { width: 60px; height: 60px; border-radius: 14px; }
+  .app b { font-size: 18px; display: block; }
+  .app span { font-size: 14px; opacity: 0.6; }
+  .how { background: #fff; border-radius: 16px; padding: 14px 16px; font-size: 15px; line-height: 1.5; color: #555; margin-top: 20px; }
+  .how ol { padding-left: 20px; }
+</style>
+</head>
+<body>
+  <h1>My Apps</h1>
+  <a class="app" href="weather/"><img src="weather/icons/icon-180.png" alt=""><div><b>Weather</b><span>Local forecast, hourly and 7-day</span></div></a>
+  <a class="app" href="slideshow/"><img src="slideshow/icons/icon-180.png" alt=""><div><b>Slideshow</b><span>Photo viewer for this site's photos</span></div></a>
+  <div class="how">
+    <b>Install on iPhone</b>
+    <ol>
+      <li>Open an app above in Safari.</li>
+      <li>Tap <b>Share</b>, then <b>Add to Home Screen</b>.</li>
+      <li>Keep <b>Open as Web App</b> on and tap <b>Add</b>.</li>
+    </ol>
+  </div>
+</body>
+</html>
