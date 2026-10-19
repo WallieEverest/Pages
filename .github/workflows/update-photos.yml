@@ -1,5 +1,7 @@
 # Rebuilds slideshow/photos.json whenever photos are added, removed or renamed.
 # Captions you typed into photos.json are kept; new photos get a caption from the filename.
+# Only used for UNENCRYPTED photos. Once slideshow/vault.json exists, this does nothing:
+# the encrypted list (photos.enc) is written by the photo manager or tools/encrypt_photos.py.
 name: Update photo list
 
 on:
@@ -20,7 +22,9 @@ jobs:
       - name: Rebuild photos.json
         run: |
           python3 - <<'EOF'
-          import json, os
+          import json, os, sys
+          if os.path.exists('slideshow/vault.json'):
+              print('Encrypted mode (vault.json present): nothing to do'); sys.exit(0)
           path = 'slideshow/photos.json'
           exts = ('.jpg', '.jpeg', '.png', '.webp', '.gif', '.heic', '.avif')
           try:

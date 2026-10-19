@@ -1,0 +1,348 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<title>Photo Manager</title>
+<link rel="icon" href="icons/icon-192.png">
+<style>
+  :root {
+    --bg: #f2f2f7; --card: #fff; --text: #111; --muted: #6b6b70; --line: #e2e2e7;
+    --input: #f2f2f7; --accent: #0a6cff; --danger: #d93025; --ok: #1e8e3e;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #000; --card: #1c1c1e; --text: #f2f2f7; --muted: #9a9aa0; --line: #2c2c2e;
+            --input: #2c2c2e; --accent: #3d8bff; --danger: #ff6b5e; --ok: #4cd06a; }
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  [hidden] { display: none !important; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, system-ui, sans-serif; line-height: 1.4;
+    background: var(--bg); color: var(--text); -webkit-text-size-adjust: 100%;
+    padding: calc(env(safe-area-inset-top) + 20px) 16px calc(env(safe-area-inset-bottom) + 32px);
+    max-width: 640px; margin: 0 auto;
+  }
+  h1 { font-size: 30px; margin-bottom: 4px; }
+  .lead { color: var(--muted); font-size: 15px; margin-bottom: 18px; }
+  .card { background: var(--card); border-radius: 16px; padding: 16px; margin-bottom: 14px; }
+  .card h2 { font-size: 17px; }
+  .stack > * + * { margin-top: 12px; }
+  .note { font-size: 14px; color: var(--muted); }
+  .err { color: var(--danger); font-size: 15px; min-height: 20px; }
+  a { color: var(--accent); }
+  input[type=password], input.cap {
+    font: inherit; font-size: 16px; width: 100%; color: var(--text); background: var(--input);
+    border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; outline: none;
+  }
+  input[type=password]:focus, input.cap:focus { border-color: var(--accent); }
+  .btn {
+    font: inherit; font-size: 16px; font-weight: 600; border: 0; border-radius: 12px; padding: 12px 16px;
+    background: var(--accent); color: #fff; cursor: pointer; display: flex; justify-content: center; width: 100%;
+  }
+  .btn:disabled { opacity: 0.4; cursor: default; }
+  .check { display: flex; gap: 10px; align-items: flex-start; font-size: 15px; }
+  .check input { margin-top: 3px; width: 18px; height: 18px; flex: none; }
+
+  .row { display: grid; grid-template-columns: 64px 1fr 40px; gap: 10px; align-items: center; padding: 10px 0; border-top: 1px solid var(--line); }
+  .row:first-child { border-top: 0; }
+  .thumb { width: 64px; height: 64px; border-radius: 8px; object-fit: cover; background: var(--input); display: block; }
+  .tag { font-size: 11px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--accent); margin-bottom: 4px; }
+  .row.removed .tag { color: var(--danger); }
+  .row.removed .thumb, .row.removed .cap { opacity: 0.35; }
+  .row.removed .cap { text-decoration: line-through; }
+  .x { width: 40px; height: 40px; border-radius: 20px; border: 0; background: var(--input); color: var(--text); font-size: 16px; cursor: pointer; }
+  .empty { color: var(--muted); font-size: 15px; padding: 8px 0; }
+  .done { border: 1px solid var(--ok); }
+  .done ol { padding-left: 20px; }
+  .done li + li { margin-top: 6px; }
+  code { font-size: 13px; background: var(--input); padding: 1px 5px; border-radius: 5px; overflow-wrap: anywhere; }
+  .foot { text-align: center; font-size: 14px; color: var(--muted); margin-top: 8px; }
+</style>
+</head>
+<body>
+  <h1>Photo Manager</h1>
+  <p class="lead">Encrypts photos on this device and gives you a .zip to upload to GitHub. Nothing leaves this device from this page.</p>
+
+  <section class="card stack" id="lockCard">
+    <h2 id="lockTitle">Unlock</h2>
+    <p class="note" id="lockNote">Checking for encrypted photos…</p>
+    <form id="lockForm" class="stack" hidden>
+      <input type="text" name="username" value="Slideshow" autocomplete="username" hidden>
+      <input id="pass1" type="password" placeholder="Passphrase" autocomplete="current-password" required>
+      <input id="pass2" type="password" placeholder="Repeat passphrase" autocomplete="new-password" hidden>
+      <button class="btn" id="lockSubmit" type="submit">Unlock</button>
+      <div class="err" id="lockErr" role="alert"></div>
+    </form>
+  </section>
+
+  <div id="main" hidden>
+    <section class="card stack">
+      <h2>Add photos</h2>
+      <label class="check"><input type="checkbox" id="shrink" checked>
+        <span>Resize to 2048 px and strip hidden data such as GPS location (recommended)</span></label>
+      <label class="btn" role="button"><input type="file" id="files" accept="image/*" multiple hidden>Choose photos…</label>
+      <div class="note" id="addStatus" aria-live="polite"></div>
+    </section>
+
+    <section class="card">
+      <h2 id="listTitle" style="margin-bottom:6px">Photos</h2>
+      <div id="list"></div>
+    </section>
+
+    <section class="card stack">
+      <div class="note" id="summary">No changes yet.</div>
+      <button class="btn" id="dlBtn" disabled>Download update (.zip)</button>
+    </section>
+
+    <section class="card stack done" id="after" hidden></section>
+
+    <p class="foot"><a href="./">Open slideshow</a> · <a href="#" id="lockLink">Lock</a></p>
+  </div>
+
+<script src="vault.js"></script>
+<script>
+'use strict';
+const $ = id => document.getElementById(id);
+const te = new TextEncoder();
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+
+let vault = null, key = null, isNewVault = false;
+// items: { entry:{f,t,c}, origC, isNew, removed, enc (new only), thumb }
+let items = [];
+
+/* ---------- Unlock / create ---------- */
+(async () => {
+  try {
+    vault = await Vault.loadVault();
+  } catch (e) { $('lockNote').textContent = e.message; return; }
+  $('lockForm').hidden = false;
+  if (vault) {
+    key = await Vault.loadKey(vault);
+    if (key) return start();
+    $('lockNote').textContent = 'Enter the passphrase for your encrypted photos.';
+    $('pass1').focus();
+  } else {
+    $('lockTitle').textContent = 'Create a passphrase';
+    $('lockNote').innerHTML = 'There are no encrypted photos here yet. Choose a passphrase; you will type it once on each device. '
+      + 'The encrypted files are public, so use something hard to guess: <b>four or more random words</b> works well. '
+      + '<b>If you forget it, the photos cannot be recovered.</b>';
+    $('pass1').autocomplete = 'new-password';
+    $('pass2').hidden = false; $('pass2').required = true;
+    $('lockSubmit').textContent = 'Create';
+  }
+})();
+
+$('lockForm').onsubmit = async ev => {
+  ev.preventDefault();
+  const p1 = $('pass1').value, btn = $('lockSubmit');
+  $('lockErr').textContent = '';
+  if (!vault) {
+    if (p1.length < 12) return ($('lockErr').textContent = 'Use at least 12 characters (several words is easiest).');
+    if (p1 !== $('pass2').value) return ($('lockErr').textContent = 'The two passphrases don\'t match.');
+  }
+  btn.disabled = true; $('lockErr').textContent = vault ? 'Unlocking…' : 'Creating…';
+  try {
+    if (vault) key = await Vault.unlock(p1, vault);
+    else {
+      const created = await Vault.createVault(p1);
+      vault = created.vault; key = created.key; isNewVault = true;
+    }
+    $('lockErr').textContent = '';
+    start();
+  } catch (e) { $('lockErr').textContent = e.message; }
+  btn.disabled = false;
+};
+
+$('lockLink').onclick = async e => { e.preventDefault(); await Vault.forgetKey(); location.reload(); };
+
+async function start() {
+  $('pass1').value = $('pass2').value = '';
+  $('lockCard').hidden = true; $('main').hidden = false;
+  if (!isNewVault) {
+    try {
+      const list = await Vault.loadList(key);
+      items = list.map(e => ({ entry: { f: e.f, t: e.t || 'image/jpeg', c: e.c || '' }, origC: e.c || '', isNew: false, removed: false }));
+    } catch (e) { $('list').innerHTML = `<div class="err">${esc(e.message)}</div>`; return; }
+  }
+  render(); updateSummary(); loadThumbs();
+}
+
+/* ---------- Images ---------- */
+async function decodeImage(blob) {
+  if (window.createImageBitmap) { try { return await createImageBitmap(blob); } catch {} }
+  return new Promise((res, rej) => {
+    const u = URL.createObjectURL(blob), im = new Image();
+    im.onload = () => { URL.revokeObjectURL(u); res(im); };
+    im.onerror = () => { URL.revokeObjectURL(u); rej(new Error('Could not read image')); };
+    im.src = u;
+  });
+}
+function drawScaled(src, max) {
+  const w = src.naturalWidth || src.width, h = src.naturalHeight || src.height;
+  const s = Math.min(1, max / Math.max(w, h));
+  const c = document.createElement('canvas');
+  c.width = Math.max(1, Math.round(w * s)); c.height = Math.max(1, Math.round(h * s));
+  const g = c.getContext('2d'); g.imageSmoothingQuality = 'high';
+  g.drawImage(src, 0, 0, c.width, c.height);
+  return c;
+}
+const toJpeg = (c, q) => new Promise((res, rej) => c.toBlob(b => b ? res(b) : rej(new Error('Could not encode image')), 'image/jpeg', q));
+
+async function loadThumbs() {
+  const todo = items.filter(i => !i.isNew && !i.thumb);
+  const worker = async () => {
+    for (let it; (it = todo.shift());) {
+      try {
+        const im = await decodeImage(await Vault.loadPhotoBlob(key, it.entry));
+        it.thumb = URL.createObjectURL(await toJpeg(drawScaled(im, 160), 0.8));
+        if (im.close) im.close();
+        if (it.img) it.img.src = it.thumb;
+      } catch { /* leave blank */ }
+    }
+  };
+  await Promise.all([worker(), worker(), worker()]);
+}
+
+function defaultCaption(name) {
+  const base = name.replace(/\.[^.]+$/, '');
+  if (/^(img|dsc|dscn|dscf|pxl|photo|image|mvimg|p)[_\- ]?\d/i.test(base) || /^[\d_\- ]+$/.test(base)) return '';
+  return base.replace(/[-_]+/g, ' ').replace(/\s+/g, ' ').trim().replace(/\b\w/g, c => c.toUpperCase());
+}
+
+$('files').onchange = async e => {
+  const files = [...e.target.files]; e.target.value = '';
+  if (!files.length) return;
+  const shrink = $('shrink').checked, failed = [];
+  $('after').hidden = true;
+  for (let n = 0; n < files.length; n++) {
+    const file = files[n];
+    $('addStatus').textContent = `Encrypting ${n + 1} of ${files.length}…`;
+    try {
+      let bytes, type, thumbCanvas = null;
+      if (shrink) {
+        const im = await decodeImage(file);
+        const c = drawScaled(im, 2048);
+        if (im.close) im.close();
+        bytes = new Uint8Array(await (await toJpeg(c, 0.85)).arrayBuffer());
+        type = 'image/jpeg';
+        thumbCanvas = drawScaled(c, 160);
+      } else {
+        bytes = new Uint8Array(await file.arrayBuffer());
+        type = file.type || 'image/jpeg';
+        try { const im = await decodeImage(file); thumbCanvas = drawScaled(im, 160); if (im.close) im.close(); } catch {}
+      }
+      const thumb = thumbCanvas ? URL.createObjectURL(await toJpeg(thumbCanvas, 0.8)) : '';
+      const enc = await Vault.encrypt(key, bytes);
+      items.push({ entry: { f: 'photos/' + Vault.randomName() + '.enc', t: type, c: defaultCaption(file.name) },
+                   origC: null, isNew: true, removed: false, enc, thumb });
+    } catch { failed.push(file.name); }
+  }
+  const ok = files.length - failed.length;
+  $('addStatus').innerHTML = `Added ${ok} photo${ok === 1 ? '' : 's'}.`
+    + (failed.length ? ` <span class="err">Couldn't read: ${esc(failed.join(', '))}. HEIC photos can only be read in Safari; on a computer, convert them to JPEG or turn off resizing.</span>` : '');
+  render(); updateSummary();
+};
+
+/* ---------- List ---------- */
+function render() {
+  const box = $('list');
+  box.textContent = '';
+  if (!items.length) { box.innerHTML = '<div class="empty">No photos yet. Choose some above.</div>'; return; }
+  for (const it of items) {
+    const row = document.createElement('div');
+    row.className = 'row' + (it.removed ? ' removed' : '');
+    row.innerHTML = `<img class="thumb" alt=""><div>${it.isNew ? '<div class="tag">New</div>' : it.removed ? '<div class="tag">Will be removed</div>' : ''}
+      <input class="cap" placeholder="No caption" aria-label="Caption"></div>
+      <button class="x" aria-label="${it.removed ? 'Keep' : 'Remove'}">${it.removed ? '↺' : '✕'}</button>`;
+    it.img = row.querySelector('img');
+    if (it.thumb) it.img.src = it.thumb;
+    const cap = row.querySelector('.cap');
+    cap.value = it.entry.c; cap.disabled = it.removed;
+    cap.oninput = () => { it.entry.c = cap.value; updateSummary(); };
+    row.querySelector('.x').onclick = () => {
+      if (it.isNew) { if (it.thumb) URL.revokeObjectURL(it.thumb); items.splice(items.indexOf(it), 1); }
+      else it.removed = !it.removed;
+      render(); updateSummary();
+    };
+    box.appendChild(row);
+  }
+}
+
+function updateSummary() {
+  const added = items.filter(i => i.isNew).length;
+  const removed = items.filter(i => i.removed).length;
+  const edited = items.filter(i => !i.isNew && !i.removed && i.entry.c.trim() !== i.origC).length;
+  const parts = [];
+  if (isNewVault) parts.push('new passphrase');
+  if (added) parts.push(`${added} to add`);
+  if (removed) parts.push(`${removed} to remove`);
+  if (edited) parts.push(`${edited} caption${edited === 1 ? '' : 's'} changed`);
+  $('summary').textContent = parts.length ? 'Changes: ' + parts.join(', ') + '.' : 'No changes yet.';
+  $('dlBtn').disabled = !parts.length;
+  $('listTitle').textContent = `Photos (${items.filter(i => !i.removed).length})`;
+}
+
+/* ---------- Zip (stored, no compression: encrypted data doesn't compress) ---------- */
+const CRC = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
+function crc32(u8) { let c = 0xFFFFFFFF; for (let i = 0; i < u8.length; i++) c = CRC[(c ^ u8[i]) & 0xFF] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; }
+
+function makeZip(files) {
+  const d = new Date();
+  const time = (d.getHours() << 11) | (d.getMinutes() << 5) | (d.getSeconds() >> 1);
+  const date = ((d.getFullYear() - 1980) << 9) | ((d.getMonth() + 1) << 5) | d.getDate();
+  const parts = [], central = [];
+  let offset = 0;
+  for (const f of files) {
+    const name = te.encode(f.name), data = f.data, crc = crc32(data);
+    const h = new DataView(new ArrayBuffer(30));
+    h.setUint32(0, 0x04034b50, true); h.setUint16(4, 20, true); h.setUint16(6, 0x0800, true); h.setUint16(8, 0, true);
+    h.setUint16(10, time, true); h.setUint16(12, date, true); h.setUint32(14, crc, true);
+    h.setUint32(18, data.length, true); h.setUint32(22, data.length, true); h.setUint16(26, name.length, true); h.setUint16(28, 0, true);
+    parts.push(h, name, data);
+    const c = new DataView(new ArrayBuffer(46));
+    c.setUint32(0, 0x02014b50, true); c.setUint16(4, 20, true); c.setUint16(6, 20, true); c.setUint16(8, 0x0800, true);
+    c.setUint16(10, 0, true); c.setUint16(12, time, true); c.setUint16(14, date, true); c.setUint32(16, crc, true);
+    c.setUint32(20, data.length, true); c.setUint32(24, data.length, true); c.setUint16(28, name.length, true);
+    c.setUint32(42, offset, true);
+    central.push(c, name);
+    offset += 30 + name.length + data.length;
+  }
+  const cdSize = central.reduce((s, p) => s + p.byteLength, 0);
+  const end = new DataView(new ArrayBuffer(22));
+  end.setUint32(0, 0x06054b50, true); end.setUint16(8, files.length, true); end.setUint16(10, files.length, true);
+  end.setUint32(12, cdSize, true); end.setUint32(16, offset, true);
+  return new Blob([...parts, ...central, end], { type: 'application/zip' });
+}
+
+/* ---------- Download ---------- */
+$('dlBtn').onclick = async () => {
+  const keep = items.filter(i => !i.removed);
+  const list = keep.map(i => ({ f: i.entry.f, t: i.entry.t, c: i.entry.c.trim() }));
+  const files = [
+    { name: 'vault.json', data: te.encode(JSON.stringify(vault, null, 2) + '\n') },
+    { name: 'photos.enc', data: await Vault.encryptList(key, list) }
+  ];
+  for (const i of keep) if (i.isNew) files.push({ name: i.entry.f, data: i.enc });
+
+  const stamp = new Date().toISOString().slice(0, 16).replace(/[-:]/g, '').replace('T', '-');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(makeZip(files));
+  a.download = `slideshow-update-${stamp}.zip`;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 60000);
+
+  const gone = items.filter(i => i.removed).map(i => i.entry.f);
+  $('after').innerHTML = `<h2>Downloaded ${esc(a.download)}</h2>
+    <ol>
+      <li>Unzip it.</li>
+      <li>On GitHub, open your repo's <code>slideshow</code> folder, choose <b>Add file → Upload files</b>, drag in everything from the zip (keep the <code>photos</code> folder), and commit.</li>
+      ${gone.length ? `<li>Delete these files from <code>slideshow/photos/</code> (they're no longer in the list):<br>${gone.map(f => `<code>${esc(f.split('/').pop())}</code>`).join(' ')}</li>` : ''}
+      <li>Reopen the slideshow after a minute or two.</li>
+    </ol>`;
+  $('after').hidden = false;
+  $('after').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+};
+</script>
+</body>
+</html>

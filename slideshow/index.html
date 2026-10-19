@@ -53,9 +53,32 @@
   #playBtn { min-width: 56px; font-size: 18px; }
   #speed { text-align: center; text-align-last: center; }
   .msg { position: fixed; inset: 0; display: grid; place-items: center; text-align: center; padding: 24px; color: #aaa; font-size: 16px; line-height: 1.5; }
+  [hidden] { display: none !important; }
+  body.loading .ui { display: none; }
+
+  .top-right { display: flex; align-items: center; gap: 12px; }
+  #lockBtn { font-size: 16px; background: none; border: 0; color: #fff; min-width: 44px; min-height: 32px; text-align: right; }
+
+  /* Passphrase screen */
+  .unlock {
+    position: fixed; inset: 0; z-index: 5; display: flex; flex-direction: column; justify-content: center; align-items: stretch;
+    gap: 14px; padding: 24px max(24px, calc(50% - 170px)); text-align: center; color: #ddd; font-size: 16px; line-height: 1.4;
+    -webkit-user-select: text; user-select: text; touch-action: manipulation;
+  }
+  .unlock * { -webkit-user-select: text; user-select: text; touch-action: manipulation; }
+  .unlock .big { font-size: 44px; }
+  .unlock input[type=password] {
+    font: inherit; font-size: 17px; color: #fff; background: #1c1c1e; border: 1px solid #3a3a3c;
+    border-radius: 12px; padding: 12px 14px; outline: none; text-align: center;
+  }
+  .unlock input[type=password]:focus { border-color: #8e8e93; }
+  .unlock label { font-size: 15px; color: #aaa; display: flex; gap: 8px; justify-content: center; align-items: center; }
+  .unlock button { font: inherit; font-size: 17px; font-weight: 600; color: #000; background: #fff; border: 0; border-radius: 12px; padding: 12px; }
+  .unlock button:disabled { opacity: 0.5; }
+  #unlockErr { min-height: 22px; color: #ff9f8a; font-size: 15px; }
 </style>
 </head>
-<body class="kenburns">
+<body class="kenburns loading">
   <div id="stage">
     <img class="slide" id="imgA" alt="">
     <img class="slide" id="imgB" alt="">
@@ -63,7 +86,10 @@
 
   <div class="ui bar-top">
     <span id="counter"></span>
-    <span id="status"></span>
+    <span class="top-right">
+      <span id="status"></span>
+      <button id="lockBtn" aria-label="Lock and forget passphrase" hidden>🔒</button>
+    </span>
   </div>
 
   <div class="ui bar-bot">
@@ -84,6 +110,17 @@
 
   <div class="msg" id="msg">Loading photos…</div>
 
+  <form class="unlock" id="unlock" autocomplete="on" hidden>
+    <div class="big">🔒</div>
+    <div>These photos are encrypted.<br>Enter the passphrase to view them.</div>
+    <input type="text" name="username" value="Slideshow" autocomplete="username" hidden>
+    <input id="pass" type="password" placeholder="Passphrase" autocomplete="current-password" enterkeyhint="go" required>
+    <label><input type="checkbox" id="remember" checked> Remember on this device</label>
+    <button type="submit">Unlock</button>
+    <div id="unlockErr" role="alert"></div>
+  </form>
+
+<script src="vault.js"></script>
 <script>
 'use strict';
 
@@ -96,11 +133,13 @@ const $ = id => document.getElementById(id);
 const prefs = Object.assign({ seconds: 5, shuffle: false, cover: false, kenburns: true }, store.get('prefs', {}));
 const savePrefs = () => store.set('prefs', prefs);
 
-let photos = [];     // [{src, caption}]
+let photos = [];     // plain: [{src, caption}]   encrypted: [{entry, caption}]
 let order = [];      // indices into photos (shuffled or not)
 let pos = 0;         // position in order
 let playing = false, timer = null, front = $('imgA'), back = $('imgB');
 let wakeLock = null, uiTimer = null;
+let encKey = null;   // CryptoKey when the photos are encrypted
+const mod = i => { const n = order.length; return ((i % n) + n) % n; };
 
 /* ---------- Load the photo list ---------- */
 function captionFrom(src) {
@@ -126,20 +165,81 @@ function buildOrder(keepCurrent) {
   pos = keepCurrent && cur !== undefined ? Math.max(0, order.indexOf(cur)) : 0;
 }
 
-/* ---------- Showing slides ---------- */
-const preloadCache = new Map();
-function preload(idx) {
-  const src = photos[order[idx]]?.src;
-  if (!src || preloadCache.has(src)) return;
-  const im = new Image(); im.decoding = 'async'; im.src = src;
-  preloadCache.set(src, im);
-  if (preloadCache.size > 6) preloadCache.delete(preloadCache.keys().next().value);
+/* ---------- Encrypted mode: passphrase ---------- */
+function askPassphrase(vault) {
+  const f = $('unlock');
+  $('msg').hidden = true; f.hidden = false;
+  setTimeout(() => $('pass').focus(), 50);
+  return new Promise(resolve => {
+    f.onsubmit = async ev => {
+      ev.preventDefault();
+      const btn = f.querySelector('button');
+      btn.disabled = true; $('unlockErr').textContent = 'Unlocking…';
+      try {
+        const key = await Vault.unlock($('pass').value, vault);
+        if ($('remember').checked) await Vault.saveKey(key, vault);
+        $('pass').value = ''; f.hidden = true; $('msg').hidden = false;
+        resolve(key);
+      } catch (e) {
+        $('unlockErr').textContent = e.message; $('pass').select();
+      }
+      btn.disabled = false;
+    };
+  });
 }
 
-function show(newPos, instant) {
+$('lockBtn').onclick = async () => { await Vault.forgetKey(); location.reload(); };
+
+/* ---------- Getting a displayable URL (decrypting if needed) ---------- */
+const urlCache = new Map();   // photo index -> Promise<objectURL>
+function getUrl(i) {
+  const p = photos[i];
+  if (!encKey) return Promise.resolve(p.src);
+  if (!urlCache.has(i)) {
+    const pr = Vault.loadPhotoBlob(encKey, p.entry).then(b => URL.createObjectURL(b));
+    pr.catch(() => urlCache.delete(i));
+    urlCache.set(i, pr);
+    trimCache();
+  }
+  return urlCache.get(i);
+}
+function trimCache() {
+  const keep = new Set([order[pos], order[mod(pos + 1)], order[mod(pos - 1)]]);
+  for (const [i, pr] of urlCache) {
+    if (urlCache.size <= 6) break;
+    if (keep.has(i)) continue;
+    urlCache.delete(i);
+    pr.then(u => { if (front.src !== u && back.src !== u) URL.revokeObjectURL(u); }).catch(() => {});
+  }
+}
+
+/* ---------- Showing slides ---------- */
+const plainPreload = new Map();
+function preload(p) {
+  const i = order[mod(p)];
+  if (encKey) { getUrl(i).catch(() => {}); return; }
+  const src = photos[i].src;
+  if (plainPreload.has(src)) return;
+  const im = new Image(); im.decoding = 'async'; im.src = src;
+  plainPreload.set(src, im);
+  if (plainPreload.size > 6) plainPreload.delete(plainPreload.keys().next().value);
+}
+
+let showToken = 0;
+async function show(newPos, instant) {
   const n = order.length;
-  pos = ((newPos % n) + n) % n;
-  const p = photos[order[pos]];
+  pos = mod(newPos);
+  const my = ++showToken, p = photos[order[pos]];
+  $('caption').textContent = p.caption || '';
+  $('counter').textContent = (pos + 1) + ' / ' + n;
+  clearTimeout(timer);
+  let url;
+  try { url = await getUrl(order[pos]); }
+  catch {
+    if (my === showToken) { $('status').textContent = 'Could not load photo ' + (pos + 1); if (playing) schedule(); }
+    return;
+  }
+  if (my !== showToken) return;   // user already moved on
   const target = back;
   target.onload = () => {
     if (instant) { front.style.transition = target.style.transition = 'none'; }
@@ -150,11 +250,9 @@ function show(newPos, instant) {
     [front, back] = [target, front];
     if (instant) requestAnimationFrame(() => { front.style.transition = back.style.transition = ''; });
   };
-  target.onerror = () => { $('status').textContent = 'Missing: ' + p.src; };
-  target.src = p.src;
+  target.onerror = () => { $('status').textContent = 'Could not show photo ' + (pos + 1); };
+  target.src = url;
   target.alt = p.caption || '';
-  $('caption').textContent = p.caption || '';
-  $('counter').textContent = (pos + 1) + ' / ' + n;
   preload(pos + 1); preload(pos - 1);
   if (playing) schedule();
 }
@@ -215,6 +313,7 @@ $('stage').addEventListener('touchend', e => {
 });
 $('stage').addEventListener('click', e => { if (!('ontouchstart' in window)) toggleUi(); });
 document.addEventListener('keydown', e => {
+  if (e.target.closest && e.target.closest('input, select, textarea') || !photos.length) return;
   if (e.key === 'ArrowRight') next();
   else if (e.key === 'ArrowLeft') prev();
   else if (e.key === ' ') { e.preventDefault(); setPlaying(!playing); }
@@ -224,9 +323,19 @@ document.addEventListener('keydown', e => {
 (async () => {
   applyPrefs();
   try {
-    photos = await loadList();
-    if (!photos.length) throw new Error('photos.json is empty. Add some photos to the photos folder.');
+    const vault = await Vault.loadVault();
+    if (vault) {
+      encKey = (await Vault.loadKey(vault)) || (await askPassphrase(vault));
+      $('lockBtn').hidden = false;
+      $('msg').textContent = 'Loading photos…';
+      photos = (await Vault.loadList(encKey)).map(e => ({ entry: e, caption: e.c || '' }));
+      if (!photos.length) throw new Error('No photos yet. Add some with the photo manager (manage.html).');
+    } else {
+      photos = await loadList();
+      if (!photos.length) throw new Error('photos.json is empty. Add some photos to the photos folder.');
+    }
     $('msg').remove();
+    document.body.classList.remove('loading');
     buildOrder(false);
     show(0, true);
     setPlaying(true);
