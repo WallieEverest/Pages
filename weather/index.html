@@ -3,11 +3,11 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Weather</title>
+<title>Boating</title>
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="Weather">
+<meta name="apple-mobile-web-app-title" content="Boating">
 <meta name="theme-color" content="#0f2742">
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icons/icon-180.png">
@@ -18,6 +18,8 @@
     --card: rgba(255,255,255,0.12);
     --line: rgba(255,255,255,0.16);
     --text: #fff; --muted: rgba(255,255,255,0.68);
+    /* Temperature bars: blue at the week's local low, red at its local high */
+    --g: linear-gradient(90deg, #6a8cff, #7ce0c8, #ffd36b, #ff8a5c, #ff4d4d);
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   html { min-height: 100%; background: linear-gradient(180deg, var(--bg1), var(--bg2)); background-color: var(--bg2); transition: background 0.6s; }
@@ -34,13 +36,13 @@
   html.storm { --bg1: #1a1626; --bg2: #3a3550; }
 
   .top { display: flex; gap: 8px; align-items: center; }
-  .top form { flex: 1; display: flex; min-width: 0; }
-  .top input {
-    flex: 1; min-width: 0; font: inherit; font-size: 16px; color: var(--text);
+  .top select {
+    flex: 1; min-width: 0; font: inherit; font-size: 15px; color: var(--text);
     background: var(--card); border: 1px solid var(--line); border-radius: 12px;
-    padding: 10px 12px; outline: none;
+    padding: 10px 12px; outline: none; -webkit-appearance: none; appearance: none; text-overflow: ellipsis;
   }
-  .top input::placeholder { color: var(--muted); }
+  .top select:disabled { color: var(--muted); }
+  .top option { color: #000; }
   .btn {
     font: inherit; font-size: 15px; color: var(--text); background: var(--card);
     border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; min-width: 44px;
@@ -56,24 +58,54 @@
 
   .card { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 12px 14px; margin-top: 12px; }
   .card h2 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600; color: var(--muted); padding-bottom: 8px; border-bottom: 1px solid var(--line); }
+  .card h2 a { color: inherit; text-decoration: none; }
+  .card h3 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600; color: var(--muted); margin-top: 14px; }
 
   .hours { display: flex; overflow-x: auto; gap: 18px; padding: 10px 2px 4px; scrollbar-width: none; }
   .hours::-webkit-scrollbar { display: none; }
-  .hour { flex: 0 0 auto; text-align: center; font-size: 15px; }
+  .hour { flex: 0 0 auto; min-width: 40px; text-align: center; font-size: 15px; }
   .hour .ic { font-size: 22px; margin: 6px 0; }
   .hour .p { font-size: 11px; color: #9fd3ff; height: 13px; }
+  .hour .wd { margin-top: 10px; font-size: 13px; color: var(--muted); white-space: nowrap; }
+  .hour .arr { display: inline-block; color: var(--text); }
+  .hour .ws { font-size: 15px; margin-top: 2px; }
+  .hour .wg { font-size: 11px; color: var(--muted); height: 13px; }
 
   .day { display: grid; grid-template-columns: 52px 32px 38px 1fr 38px; align-items: center; gap: 8px; padding: 9px 0; border-bottom: 1px solid var(--line); font-size: 17px; }
   .day:last-child { border-bottom: 0; }
   .day .ic { font-size: 20px; text-align: center; }
   .day .lo { color: var(--muted); text-align: right; }
   .bar { height: 5px; border-radius: 3px; background: rgba(0,0,0,0.25); position: relative; }
-  .bar i { position: absolute; top: 0; bottom: 0; border-radius: 3px; background: linear-gradient(90deg, #7cc4ff, #ffd36b, #ff8a5c); }
+  /* The segment is a window onto one gradient spanning the whole track (the week's low to high),
+     so warmer days show warmer colors: --l and --w are the segment's left and width in %. */
+  .bar i { position: absolute; top: 0; bottom: 0; left: calc(var(--l) * 1%); width: calc(var(--w) * 1%); border-radius: 3px; overflow: hidden; }
+  .bar i::before { content: ''; position: absolute; top: 0; bottom: 0; left: calc(var(--l) / var(--w) * -100%); width: calc(100 / var(--w) * 100%); background: var(--g); }
 
   .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
   .grid .card { margin-top: 12px; }
   .metric { font-size: 26px; font-weight: 400; padding-top: 8px; }
   .sub { font-size: 13px; color: var(--muted); margin-top: 4px; }
+
+  /* NWS marine forecast: alerts, zone forecast periods and boating briefings */
+  .alert { border-left: 4px solid var(--sev, #8e8e93); background: rgba(0,0,0,0.18); border-radius: 10px; margin-top: 10px; }
+  .alert.Extreme, .alert.Severe { --sev: #ff453a; }
+  .alert.Moderate { --sev: #ff9f0a; }
+  .alert.Minor { --sev: #ffd60a; }
+  .alert summary { list-style: none; padding: 10px 12px; font-size: 16px; font-weight: 600; cursor: pointer; }
+  .alert summary::-webkit-details-marker { display: none; }
+  .alert summary .sub { font-weight: 400; margin-top: 2px; }
+  .alert .body { padding: 0 12px 12px; font-size: 14px; line-height: 1.45; color: rgba(255,255,255,0.88); }
+  .alert .body p { margin-top: 8px; }
+  .noalerts { font-size: 15px; color: var(--muted); padding-top: 10px; }
+  .period { padding: 10px 0; border-bottom: 1px solid var(--line); font-size: 15px; line-height: 1.45; }
+  .period:last-of-type { border-bottom: 0; }
+  .period b { display: block; font-size: 16px; margin-bottom: 2px; }
+  .stories { display: flex; align-items: flex-start; gap: 12px; overflow-x: auto; scroll-snap-type: x mandatory; padding-top: 10px; scrollbar-width: none; }
+  .stories::-webkit-scrollbar { display: none; }
+  .story { flex: 0 0 100%; scroll-snap-align: start; }
+  .story img { display: block; width: 100%; aspect-ratio: 16 / 9; object-fit: contain; background: rgba(0,0,0,0.25); border-radius: 10px; }
+  .story figcaption { font-size: 14px; line-height: 1.45; color: rgba(255,255,255,0.88); margin-top: 8px; }
+  .dots { text-align: center; color: var(--muted); font-size: 12px; margin-top: 8px; letter-spacing: 3px; }
 
   .msg { text-align: center; color: var(--muted); padding: 40px 12px; font-size: 16px; line-height: 1.5; }
   .credit { text-align: center; color: var(--muted); font-size: 11px; margin-top: 18px; }
@@ -84,16 +116,14 @@
 </head>
 <body>
   <div class="top">
-    <form id="searchForm" autocomplete="off">
-      <input id="q" type="search" placeholder="Search city" enterkeyhint="search">
-    </form>
+    <select id="zoneSel" aria-label="Marine zone" disabled><option>Marine zone</option></select>
     <button class="btn" id="locBtn" aria-label="Use my location">📍</button>
     <button class="btn" id="unitBtn" aria-label="Toggle units">°F</button>
   </div>
 
   <main id="app"><div class="msg">Loading…</div></main>
 
-  <div class="credit">Data: <a href="https://open-meteo.com/">Open-Meteo.com</a></div>
+  <div class="credit">Data: <a href="https://open-meteo.com/">Open-Meteo.com</a> · <a href="https://www.weather.gov/marine/">National Weather Service</a></div>
 
 <script>
 'use strict';
@@ -103,8 +133,8 @@ const store = {
   get(k, d) { try { const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch { return d; } },
   set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} }
 };
-let units = store.get('units', 'F');          // 'F' or 'C'
-let place = store.get('place', null);         // {name, lat, lon}
+let units = store.get('units', 'F');          // 'F' or 'C' (wind is always in knots)
+let place = store.get('place', null);         // {name, lat, lon} from GPS
 
 const $ = id => document.getElementById(id);
 const app = $('app');
@@ -138,23 +168,15 @@ async function fetchForecast(lat, lon) {
   const p = new URLSearchParams({
     latitude: lat, longitude: lon, timezone: 'auto', forecast_days: 7,
     temperature_unit: units === 'F' ? 'fahrenheit' : 'celsius',
-    wind_speed_unit: units === 'F' ? 'mph' : 'kmh',
+    wind_speed_unit: 'kn',
     precipitation_unit: units === 'F' ? 'inch' : 'mm',
-    current: 'temperature_2m,apparent_temperature,relative_humidity_2m,weather_code,is_day,wind_speed_10m,wind_direction_10m,precipitation',
-    hourly: 'temperature_2m,weather_code,precipitation_probability,is_day',
+    current: 'temperature_2m,apparent_temperature,relative_humidity_2m,weather_code,is_day,wind_speed_10m,wind_direction_10m,wind_gusts_10m,precipitation',
+    hourly: 'temperature_2m,weather_code,precipitation_probability,is_day,wind_speed_10m,wind_direction_10m,wind_gusts_10m',
     daily: 'weather_code,temperature_2m_max,temperature_2m_min,sunrise,sunset,uv_index_max,precipitation_probability_max'
   });
   const r = await fetch('https://api.open-meteo.com/v1/forecast?' + p);
   if (!r.ok) throw new Error('Forecast request failed (' + r.status + ')');
   return r.json();
-}
-
-async function geocode(name) {
-  const r = await fetch('https://geocoding-api.open-meteo.com/v1/search?count=1&language=en&format=json&name=' + encodeURIComponent(name));
-  const j = await r.json();
-  if (!j.results || !j.results.length) throw new Error('No place found for "' + name + '"');
-  const g = j.results[0];
-  return { name: [g.name, g.admin1 || g.country].filter(Boolean).join(', '), lat: g.latitude, lon: g.longitude };
 }
 
 async function reverseName(lat, lon) {
@@ -166,12 +188,133 @@ async function reverseName(lat, lon) {
   } catch { return 'My Location'; }
 }
 
+/* National Weather Service marine forecast (US coastal waters and Great Lakes), from api.weather.gov,
+   plus the forecast office's boating briefings read from its home page (both allow cross-origin requests). */
+const NWS_API = 'https://api.weather.gov';
+const NWS_V = 2;                               // format of the saved 'nws' entry; older copies are ignored
+const savedNws = () => { const n = store.get('nws', null); return n && n.v === NWS_V ? n : null; };
+const MARINE_ZONE = /^(AM|AN|GM|PZ|PK|PH|PM|PS|LC|LE|LH|LM|LO|LS|SL)Z\d{3}$/;
+const nwsGet = async url => {
+  const r = await fetch(url, { headers: { Accept: 'application/geo+json' } });
+  if (!r.ok) throw new Error('NWS request failed (' + r.status + ')');
+  return r.json();
+};
+const pt = (lat, lon) => `${lat.toFixed(4)},${lon.toFixed(4)}`;   // the API redirects more precise points
+// Errors are thrown (not treated as "no zone"), so a failed lookup is retried on the next open.
+const zonesAt = (lat, lon) => nwsGet(`${NWS_API}/zones?type=coastal&include_geometry=false&point=${pt(lat, lon)}`)
+  .then(j => j.features.map(f => f.properties));
+
+// Marine zone at the location; from shore, the zone hit most often by a ring of points 10, 25, then 50 km out.
+async function findZone(lat, lon) {
+  const here = await zonesAt(lat, lon);
+  if (here.length) return here[0];
+  for (const km of [10, 25, 50]) {
+    const dLat = km / 111, dLon = km / (111 * Math.cos(lat * Math.PI / 180));
+    const hits = (await Promise.all([0, 45, 90, 135, 180, 225, 270, 315].map(a => {
+      const r = a * Math.PI / 180;
+      return zonesAt(lat + dLat * Math.cos(r), lon + dLon * Math.sin(r));
+    }))).flat();
+    if (hits.length) {
+      const count = {};
+      hits.forEach(z => count[z.id] = (count[z.id] || 0) + 1);
+      return hits.reduce((a, b) => count[b.id] > count[a.id] ? b : a);
+    }
+  }
+  return null;
+}
+
+// Office and its marine zones (for the zone picker); only looked up when the location changes.
+async function fetchOffice(zone) {
+  const cwa = zone.cwa[0];
+  const o = await nwsGet(`${NWS_API}/offices/${cwa}`);
+  const ids = o.responsibleForecastZones.map(u => u.split('/').pop()).filter(id => MARINE_ZONE.test(id));
+  const zones = ids.length
+    ? (await nwsGet(`${NWS_API}/zones?include_geometry=false&id=${ids.join(',')}`)).features.map(f => ({ id: f.properties.id, name: f.properties.name }))
+    : [];
+  if (!zones.some(z => z.id === zone.id)) zones.unshift({ id: zone.id, name: zone.name });
+  return { cwa, name: o.name.replace(/^NWS\s+/, ''), zones };
+}
+
+async function fetchMarine(zoneId, lat, lon, cwa) {
+  const alertList = url => nwsGet(url).then(j => j.features.map(f => f.properties), () => []);
+  const [zoneAlerts, localAlerts, fc, stories] = await Promise.all([
+    alertList(`${NWS_API}/alerts/active?zone=${zoneId}`),
+    alertList(`${NWS_API}/alerts/active?point=${pt(lat, lon)}`),
+    fetchZoneForecast(zoneId, cwa),
+    fetchStories(cwa).catch(() => [])
+  ]);
+  const seen = new Set();
+  const alerts = [...zoneAlerts, ...localAlerts].filter(p => !seen.has(p.id) && seen.add(p.id))
+    .map(p => ({ event: p.event, severity: p.severity, ends: p.ends || p.expires, description: p.description, instruction: p.instruction }));
+  return { alerts, ...fc, stories };
+}
+
+// Zone forecast from the API; zones it doesn't cover (e.g. Great Lakes nearshore) come from the office's
+// Coastal Waters (CWF) or Nearshore Marine (NSH) text bulletin instead.
+async function fetchZoneForecast(zoneId, cwa) {
+  try {
+    const p = (await nwsGet(`${NWS_API}/zones/coastal/${zoneId}/forecast`)).properties;
+    if (p.periods && p.periods.length) return { periods: p.periods.map(x => ({ name: x.name, text: x.detailedForecast })), issued: p.updated };
+  } catch {}
+  for (const type of ['CWF', 'NSH']) {
+    try {
+      const prod = await nwsGet(`${NWS_API}/products/types/${type}/locations/${cwa}/latest`);
+      const periods = zoneFromBulletin(prod.productText, zoneId);
+      if (periods) return { periods, issued: prod.issuanceTime };
+    } catch {}
+  }
+  throw new Error('No marine forecast for ' + zoneId);
+}
+
+// Bulletins are split into segments by "$$". Each starts with zone codes such as "AMZ550-552-" or
+// "LMZ740>745-" (a range), ending in an expiry time, then periods like ".TODAY...North winds 10 kt."
+function zoneFromBulletin(text, zoneId) {
+  for (const seg of text.split('$$')) {
+    const head = seg.match(/^((?:[A-Z]{2}[ZC]\d{3}[\d>-]*\n?)+?\d{6}-)$/m);
+    if (!head || !ugcZones(head[1].replace(/\s/g, '')).includes(zoneId)) continue;
+    const periods = [...seg.matchAll(/^\.([A-Z][A-Z .]*?)\.\.\.([\s\S]*?)(?=^\.[A-Z]|(?![\s\S]))/gm)].map(m => ({
+      name: m[1].toLowerCase().replace(/\b\w/g, ch => ch.toUpperCase()),
+      text: m[2].replace(/\s+/g, ' ').trim()
+    }));
+    return periods.length ? periods : null;
+  }
+  return null;
+}
+
+function ugcZones(ugc) {
+  const out = [];
+  let prefix = '';
+  for (const tok of ugc.split('-')) {
+    const m = tok.match(/^([A-Z]{2}[ZC])?(\d{3})(?:>(\d{3}))?$/);
+    if (!m) continue;
+    if (m[1]) prefix = m[1];
+    for (let n = +m[2]; n <= +(m[3] || m[2]); n++) out.push(prefix + String(n).padStart(3, '0'));
+  }
+  return out;
+}
+
+// Graphicast briefings whose opening sentence is about boating, wind or waves (skips land and city forecasts).
+const MARINE_TOPIC = /boat|marine|mariner|small craft|seas\b|surf|rip current|waves?\b|swell|coastal waters|gale|wind|tide/i;
+async function fetchStories(cwa) {
+  const home = `https://www.weather.gov/${cwa.toLowerCase()}/`;
+  const r = await fetch(home);
+  if (!r.ok) return [];
+  const doc = new DOMParser().parseFromString(await r.text(), 'text/html');
+  const seen = new Set();
+  return [...doc.querySelectorAll('.graphicast')].map(g => {
+    const img = g.querySelector('img');
+    const src = img && new URL(img.getAttribute('src'), home).href;
+    const text = (g.querySelector('.description')?.textContent || '').replace(/^\s*Click\/tap image to enlarge\s*\|\s*/i, '').trim();
+    return { src, text };
+  }).filter(s => s.src && MARINE_TOPIC.test(s.text.split(/\.\s/)[0]) && !seen.has(s.src) && seen.add(s.src));
+}
+
 function locate() {
   return new Promise((res, rej) => {
     if (!navigator.geolocation) return rej(new Error('Location not available'));
     navigator.geolocation.getCurrentPosition(
       p => res({ lat: p.coords.latitude, lon: p.coords.longitude }),
-      e => rej(new Error(e.code === 1 ? 'Location permission denied. Search for a city instead.' : 'Could not get your location.')),
+      e => rej(new Error(e.code === 1 ? 'Location permission denied. Allow location for this app in Settings to get your local marine forecast.' : 'Could not get your location.')),
       { enableHighAccuracy: false, timeout: 10000, maximumAge: 10 * 60 * 1000 }
     );
   });
@@ -181,6 +324,8 @@ function locate() {
 const deg = v => Math.round(v) + '°';
 const hhmm = iso => new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 const compass = d => ['N','NE','E','SE','S','SW','W','NW'][Math.round(d / 45) % 8];
+// Arrow points the way the wind blows toward (direction is where it comes from).
+const windArrow = d => `<span class="arr" style="transform:rotate(${Math.round(d)}deg)">↓</span>`;
 
 function render(d, name, fetchedAt) {
   const c = d.current, dy = d.daily, h = d.hourly;
@@ -190,21 +335,24 @@ function render(d, name, fetchedAt) {
   const nowIdx = Math.max(0, h.time.findIndex(t => t >= c.time.slice(0, 13)));
   const hours = h.time.slice(nowIdx, nowIdx + 24).map((t, i) => {
     const k = nowIdx + i, pp = h.precipitation_probability[k];
+    const ws = Math.round(h.wind_speed_10m[k]), wg = Math.round(h.wind_gusts_10m[k]);
     return `<div class="hour"><div>${i === 0 ? 'Now' : new Date(t).toLocaleTimeString([], { hour: 'numeric' })}</div>
       <div class="ic">${wIcon(h.weather_code[k], h.is_day[k])}</div>
-      <div class="p">${pp >= 20 ? pp + '%' : ''}</div><div>${deg(h.temperature_2m[k])}</div></div>`;
+      <div class="p">${pp >= 20 ? pp + '%' : ''}</div><div>${deg(h.temperature_2m[k])}</div>
+      <div class="wd">${windArrow(h.wind_direction_10m[k])} ${compass(h.wind_direction_10m[k])}</div>
+      <div class="ws">${ws} kt</div><div class="wg">${wg > ws ? 'G' + wg : ''}</div></div>`;
   }).join('');
 
   const wkLo = Math.min(...dy.temperature_2m_min), wkHi = Math.max(...dy.temperature_2m_max), span = (wkHi - wkLo) || 1;
   const days = dy.time.map((t, i) => {
     const lo = dy.temperature_2m_min[i], hi = dy.temperature_2m_max[i];
-    const L = (lo - wkLo) / span * 100, W = (hi - lo) / span * 100;
+    const W = Math.max((hi - lo) / span * 100, 4), L = Math.min((lo - wkLo) / span * 100, 100 - W);
     const label = i === 0 ? 'Today' : new Date(t + 'T12:00').toLocaleDateString([], { weekday: 'short' });
     return `<div class="day"><div>${label}</div><div class="ic">${wIcon(dy.weather_code[i])}</div>
-      <div class="lo">${deg(lo)}</div><div class="bar"><i style="left:${L}%;width:${Math.max(W, 4)}%"></i></div><div>${deg(hi)}</div></div>`;
+      <div class="lo">${deg(lo)}</div><div class="bar"><i style="--l:${L};--w:${W}"></i></div><div>${deg(hi)}</div></div>`;
   }).join('');
 
-  const sp = units === 'F' ? 'mph' : 'km/h';
+  const gust = Math.round(c.wind_gusts_10m), wind = Math.round(c.wind_speed_10m);
   app.innerHTML = `
     <section class="hero">
       <div class="place">${escapeHtml(name)}</div>
@@ -214,15 +362,58 @@ function render(d, name, fetchedAt) {
       <div class="updated">Updated ${new Date(fetchedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</div>
     </section>
     <section class="card"><h2>Hourly</h2><div class="hours">${hours}</div></section>
+    <div id="nws"></div>
     <section class="card"><h2>7-Day Forecast</h2>${days}</section>
     <div class="grid">
+      <section class="card"><h2>Wind</h2><div class="metric">${wind} kt</div><div class="sub">from ${compass(c.wind_direction_10m)}${gust > wind ? ` · gusts ${gust} kt` : ''}</div></section>
       <section class="card"><h2>Feels Like</h2><div class="metric">${deg(c.apparent_temperature)}</div></section>
       <section class="card"><h2>Humidity</h2><div class="metric">${c.relative_humidity_2m}%</div></section>
-      <section class="card"><h2>Wind</h2><div class="metric">${Math.round(c.wind_speed_10m)} ${sp}</div><div class="sub">from ${compass(c.wind_direction_10m)}</div></section>
       <section class="card"><h2>UV Index</h2><div class="metric">${Math.round(dy.uv_index_max[0])}</div><div class="sub">today's max</div></section>
       <section class="card"><h2>Sunrise</h2><div class="metric">${hhmm(dy.sunrise[0])}</div></section>
       <section class="card"><h2>Sunset</h2><div class="metric">${hhmm(dy.sunset[0])}</div></section>
     </div>`;
+  const n = savedNws();
+  if (n && n.lat === place.lat && n.lon === place.lon) renderNws(n);
+}
+
+// NWS text is hard-wrapped at ~66 columns: rejoin lines into paragraphs and bold the "* WHAT..." labels.
+function nwsText(s) {
+  return (s || '').split(/\n\s*\n/).map(p => p.replace(/\s*\n\s*/g, ' ').trim()).filter(Boolean)
+    .map(p => '<p>' + escapeHtml(p).replace(/^\* ([A-Z][A-Z /]+)\.\.\./, (m, k) => `<b>${k[0] + k.slice(1).toLowerCase()}:</b> `) + '</p>').join('');
+}
+
+function renderZonePicker(n) {
+  const sel = $('zoneSel');
+  if (!n || !n.zone) { sel.innerHTML = '<option>No NWS marine zone nearby</option>'; sel.disabled = true; return; }
+  sel.innerHTML = n.office.zones.map(z => `<option value="${z.id}"${z.id === n.zone.id ? ' selected' : ''}>${escapeHtml(z.name)}</option>`).join('');
+  sel.disabled = n.office.zones.length < 2;
+}
+
+function renderNws(n) {
+  renderZonePicker(n);
+  const box = $('nws');
+  if (!box) return;
+  if (!n.zone) { box.innerHTML = '<section class="card"><h2>Marine Forecast</h2><div class="noalerts">No National Weather Service marine zone within about 50 km of this location.</div></section>'; return; }
+  const when = iso => new Date(iso).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' });
+  const alerts = n.alerts.length ? n.alerts.map(a => `
+    <details class="alert ${escapeHtml(a.severity || '')}">
+      <summary>⚠️ ${escapeHtml(a.event)}${a.ends ? `<div class="sub">until ${when(a.ends)}</div>` : ''}</summary>
+      <div class="body">${nwsText(a.description)}${nwsText(a.instruction)}</div>
+    </details>`).join('') : '<div class="noalerts">No active marine alerts</div>';
+  const periods = n.periods.slice(0, 6).map(p => `<div class="period"><b>${escapeHtml(p.name)}</b>${escapeHtml(p.text)}</div>`).join('');
+  const stories = n.stories.length ? `
+    <h3>Boating Briefings · NWS ${escapeHtml(n.office.name)}</h3>
+    <div class="stories">${n.stories.map(s => `
+      <figure class="story">
+        <a href="${escapeHtml(s.src)}" target="_blank" rel="noopener"><img src="${escapeHtml(s.src)}" crossorigin="anonymous" alt="" loading="lazy"></a>
+        ${s.text ? `<figcaption>${escapeHtml(s.text)}</figcaption>` : ''}
+      </figure>`).join('')}</div>
+    ${n.stories.length > 1 ? `<div class="dots">${n.stories.length} briefings · swipe</div>` : ''}` : '';
+  const page = `https://forecast.weather.gov/shmrn.php?mz=${n.zone.id.toLowerCase()}`;
+  box.innerHTML = `<section class="card"><h2><a href="${page}" target="_blank" rel="noopener">Marine Forecast · ${escapeHtml(n.zone.id)}</a></h2>
+    ${alerts}
+    ${periods ? `<h3>${escapeHtml(n.zone.name)}${n.issued ? ' · issued ' + when(n.issued) : ''}</h3>${periods}` : ''}
+    ${stories}</section>`;
 }
 
 function showMsg(text) { app.innerHTML = `<div class="msg">${escapeHtml(text)}</div>`; }
@@ -230,7 +421,7 @@ function escapeHtml(s) { return String(s).replace(/[&<>"']/g, ch => ({ '&':'&amp
 
 /* ---------- Flow ---------- */
 async function load() {
-  if (!place) return showMsg('Tap 📍 to use your location, or search for a city.');
+  if (!place) return showMsg('Tap 📍 to use your location.');
   // Show cached data instantly, then refresh
   const cached = store.get('cache', null);
   if (cached && cached.units === units && cached.lat === place.lat && cached.lon === place.lon) {
@@ -238,6 +429,7 @@ async function load() {
   } else if (!app.querySelector('.hero')) {
     app.innerHTML = '<div class="msg"><span class="spin">◌</span></div>';
   }
+  loadNws();
   try {
     const data = await fetchForecast(place.lat, place.lon);
     const at = Date.now();
@@ -248,30 +440,44 @@ async function load() {
   }
 }
 
+// Runs alongside the forecast; the saved copy is shown by render(), so this only refreshes it.
+// The zone is found once per location; a zone picked from the list is kept until the location changes.
+async function loadNws(zoneId) {
+  const p = place, old = savedNws();
+  const same = old && old.lat === p.lat && old.lon === p.lon;
+  try {
+    let zone, office;
+    if (same && old.zone) {
+      office = old.office;
+      zone = office.zones.find(z => z.id === (zoneId || old.zone.id)) || old.zone;
+    } else if (same && !old.zone && Date.now() - old.at < 24 * 3600 * 1000) {
+      return;                  // no zone near this location; check again tomorrow
+    } else {
+      const z = await findZone(p.lat, p.lon);
+      if (!z) { const n = { v: NWS_V, lat: p.lat, lon: p.lon, at: Date.now(), zone: null }; store.set('nws', n); if (place === p) renderNws(n); return; }
+      office = await fetchOffice(z);
+      zone = { id: z.id, name: z.name };
+    }
+    const m = await fetchMarine(zone.id, p.lat, p.lon, office.cwa);
+    if (place !== p) return;   // location changed while loading
+    const n = { v: NWS_V, lat: p.lat, lon: p.lon, at: Date.now(), zone, office, ...m };
+    store.set('nws', n);
+    renderNws(n);
+  } catch {}                   // offline or NWS down: keep showing the saved copy
+}
+
 async function useMyLocation() {
   showMsg('Finding your location…');
   try {
     const { lat, lon } = await locate();
-    place = { name: await reverseName(lat, lon), lat, lon, auto: true };
+    place = { name: await reverseName(lat, lon), lat, lon };
     store.set('place', place);
     load();
   } catch (e) { showMsg(e.message); }
 }
 
-$('searchForm').addEventListener('submit', async ev => {
-  ev.preventDefault();
-  const q = $('q').value.trim();
-  if (!q) return;
-  $('q').blur();
-  try {
-    place = await geocode(q);
-    store.set('place', place);
-    $('q').value = '';
-    load();
-  } catch (e) { showMsg(e.message); }
-});
-
 $('locBtn').addEventListener('click', useMyLocation);
+$('zoneSel').addEventListener('change', e => loadNws(e.target.value));
 
 $('unitBtn').textContent = '°' + units;
 $('unitBtn').addEventListener('click', () => {
