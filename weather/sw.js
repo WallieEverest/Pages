@@ -1,6 +1,6 @@
 // Caches the app shell so it opens offline. Forecast data is cached by the page itself.
 // Bump VERSION whenever you change index.html so phones pick up the new copy.
-const VERSION = 'weather-v5';
+const VERSION = 'weather-v6';
 const NWS_IMAGES = 'nws-images';   // separate name, so it survives VERSION bumps
 const trim = c => c.keys().then(k => Promise.all(k.slice(0, -12).map(r => c.delete(r))));
 const SHELL = ['./', 'index.html', 'manifest.json', 'icons/icon-180.png', 'icons/icon-192.png'];

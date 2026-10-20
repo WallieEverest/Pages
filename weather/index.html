@@ -372,7 +372,7 @@ function render(d, name, fetchedAt) {
       <div class="temp">${deg(c.temperature_2m)}</div>
       <div class="cond">${wText(c.weather_code)}</div>
       <div class="hilo">H:${deg(dy.temperature_2m_max[0])}  L:${deg(dy.temperature_2m_min[0])}</div>
-      <div class="updated">Updated ${new Date(fetchedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</div>
+      <div class="updated" id="upd"></div>
     </section>
     <section class="card"><h2>Hourly</h2><div class="hours">${hours}</div></section>
     <section class="card"><h2>7-Day Forecast</h2>${days}</section>
@@ -385,6 +385,8 @@ function render(d, name, fetchedAt) {
       <section class="card"><h2>Sunset</h2><div class="metric">${hhmm(dy.sunset[0])}</div></section>
     </div>
     <div id="nws"></div>`;
+  shownAt = fetchedAt;
+  stamp();
   const n = savedNws();
   if (n && n.lat === place.lat && n.lon === place.lon) renderNws(n);
   else renderNwsStatus();
@@ -437,32 +439,83 @@ function escapeHtml(s) { return String(s).replace(/[&<>"']/g, ch => ({ '&':'&amp
 async function load() {
   if (!place) return showMsg('Tap 📍 to use your location, or search for a city or ZIP code.');
   // Show cached data instantly, then refresh
+  const p = place, key = `${p.lat},${p.lon},${units}`;
+  if (loadingKey === key) return;   // this exact refresh is already running
+  loadingKey = key;
+  lastTry = Date.now();
+  clearTimeout(retryTimer);
   const cached = store.get('cache', null);
-  if (cached && cached.units === units && cached.lat === place.lat && cached.lon === place.lon) {
-    render(cached.data, place.name, cached.at);
+  if (isCurrent(cached)) {
+    render(cached.data, p.name, cached.at);
   } else if (!app.querySelector('.hero')) {
     app.innerHTML = '<div class="msg"><span class="spin">◌</span><br>Getting the forecast…</div>';
   }
-  const p = place;
+  setNote('Updating…');
   try {
     const data = await fetchForecast(p.lat, p.lon);
     if (place !== p) return;   // location changed while loading
     const at = Date.now();
     store.set('cache', { units, lat: p.lat, lon: p.lon, at, data });
+    retries = 0;
+    note = '';
     render(data, p.name, at);
   } catch (e) {
-    if (place === p && !app.querySelector('.hero')) showMsg(navigator.onLine
-      ? 'Could not get the forecast (weak signal or the service is not responding). Tap 📍 to try again.'
-      : 'You are offline and no forecast is saved yet.');
+    if (place !== p) return;
+    // Try again by itself: iOS often resumes the app before its network connection is back.
+    const s = RETRY_S[Math.min(retries++, RETRY_S.length - 1)];
+    retryTimer = setTimeout(load, s * 1000);
+    if (!app.querySelector('.hero')) showMsg((navigator.onLine
+      ? 'Could not get the forecast (weak signal or the service is not responding).'
+      : 'You are offline and no forecast is saved yet.') + ` Trying again in ${s} seconds…`);
+    else setNote(`no connection · retrying in ${s} s`);
+  } finally {
+    if (loadingKey === key) loadingKey = null;
   }
   // The marine forecast loads after the main forecast, so it never delays it on a weak signal.
   if (place === p) loadNws();
 }
 
+/* ---------- Keeping it fresh without user input ---------- */
+const FRESH_MS = 10 * 60 * 1000;           // refresh when the forecast is older than this
+const RETRY_S = [3, 10, 30, 60, 120];      // waits between retries after a failed refresh
+let loadingKey = null, retryTimer = null, retries = 0, lastTry = 0, note = '', shownAt = 0;
+
+const isCurrent = c => c && place && c.units === units && c.lat === place.lat && c.lon === place.lon;
+
+// "Updated 9:30 AM", plus the age once it is over an hour old, plus any status note.
+function stamp() {
+  const el = $('upd');
+  if (!el || !shownAt) return;
+  const mins = Math.round((Date.now() - shownAt) / 60000);
+  const age = mins >= 60 ? ` (${mins < 1440 ? Math.round(mins / 60) + ' h' : Math.round(mins / 1440) + ' d'} ago)` : '';
+  el.textContent = `Updated ${new Date(shownAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}${age}${note ? ' · ' + note : ''}`;
+}
+function setNote(text) { note = text; stamp(); }
+
+function refreshIfStale() {
+  if (document.visibilityState !== 'visible' || !place) return;
+  const c = store.get('cache', null);
+  // Due when old, or when a retry is waiting (a resume retries early), but never within 3 s of the last attempt.
+  const due = !isCurrent(c) || Date.now() - c.at > FRESH_MS || retries;
+  if (due && Date.now() - lastTry > 3000) load();
+  else stamp();
+}
+
+// iOS home-screen apps don't reliably send any single "resumed" event, so listen to all of them.
+document.addEventListener('visibilitychange', refreshIfStale);
+addEventListener('pageshow', refreshIfStale);
+addEventListener('focus', refreshIfStale);
+addEventListener('online', () => { retries = Math.max(retries, 1); refreshIfStale(); });
+setInterval(refreshIfStale, 60 * 1000);    // while the app stays open on screen
+
 // Runs after the forecast; the saved copy is shown by render(), so this only refreshes it.
 // The zone and office are found once per location.
+let nwsKey = null, nwsRetry = null, nwsRetries = 0;
 async function loadNws() {
-  const p = place, old = savedNws();
+  const p = place, old = savedNws(), key = `${p.lat},${p.lon}`;
+  if (nwsKey === key) return;   // already loading for this place
+  nwsKey = key;
+  clearTimeout(nwsRetry);
   const same = old && old.lat === p.lat && old.lon === p.lon;
   nwsStatus = 'Loading marine forecast…';
   try {
@@ -481,11 +534,17 @@ async function loadNws() {
     if (place !== p) return;   // location changed while loading
     const n = { v: NWS_V, lat: p.lat, lon: p.lon, at: Date.now(), zone, office, ...m };
     store.set('nws', n);
+    nwsRetries = 0;
     renderNws(n);
-  } catch {                    // offline or NWS down: keep showing the saved copy, if any
-    if (place !== p || same) return;
-    nwsStatus = 'Marine forecast unavailable right now (no signal or NWS not responding). It will try again when you reopen the app.';
+  } catch {                    // offline or NWS down: keep showing the saved copy, if any, and retry
+    if (place !== p) return;
+    const s = RETRY_S[Math.min(nwsRetries++, RETRY_S.length - 1)] * 3;
+    nwsRetry = setTimeout(loadNws, s * 1000);
+    if (same) return;
+    nwsStatus = `Marine forecast unavailable right now (no signal or NWS not responding). Trying again in ${s} seconds…`;
     renderNwsStatus();
+  } finally {
+    if (nwsKey === key) nwsKey = null;
   }
 }
 
@@ -530,13 +589,6 @@ $('unitBtn').addEventListener('click', () => {
   store.set('units', units);
   $('unitBtn').textContent = '°' + units;
   load();
-});
-
-// Refresh when the app comes back to the foreground (iOS doesn't run web apps in the background)
-document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState !== 'visible') return;
-  const c = store.get('cache', null);
-  if (!c || Date.now() - c.at > 10 * 60 * 1000) load();
 });
 
 if (place) load();

@@ -72,7 +72,7 @@ If you had an older home-screen icon (for example one named *Weather*, or one ad
 **Good to know**
 
 - Marine forecasts cover US coastal waters and the Great Lakes. Elsewhere, the app shows the weather and wind only.
-- Everything is saved on the phone and shown instantly when you open the app, even with no signal on the water. It refreshes when you open the app if the saved copy is older than 10 minutes. On a weak signal the app gives up waiting after a few seconds and keeps showing the saved copy. Check the **Updated** and **issued** times before relying on it.
+- Everything is saved on the phone and shown instantly when you open the app, even with no signal on the water. It refreshes when you open the app if the saved copy is older than 10 minutes. On a weak signal the app gives up waiting after a few seconds, keeps showing the saved copy, and tries again by itself (the line under the temperature shows *Updating…* or *retrying*, and how old the data is). It also refreshes every 10 minutes while left open. Check the **Updated** and **issued** times before relying on it.
 - This app is a convenience, not a navigation or safety device. Always check official forecasts and NOAA Weather Radio before going out.
 - Weather data: [Open-Meteo](https://open-meteo.com) (free, non-commercial use). Marine forecasts, alerts and briefings: [National Weather Service](https://www.weather.gov/marine/). Place names: BigDataCloud.
 
@@ -144,7 +144,7 @@ Not using the action? Edit `photos.json` by hand; plain strings work too: `["pho
 
 ## Updating the apps
 
-iPhone caches the apps. After changing an app's code (`index.html`, `vault.js`, `sw.js`), bump `VERSION` at the top of that app's `sw.js` (the Boating app is at `weather-v5` and the slideshow at `slideshow-v2`; increase the number), then close and reopen the app on your phone, twice if needed.
+iPhone caches the apps. After changing an app's code (`index.html`, `vault.js`, `sw.js`), bump `VERSION` at the top of that app's `sw.js` (the Boating app is at `weather-v6` and the slideshow at `slideshow-v2`; increase the number), then close and reopen the app on your phone, twice if needed.
 
 ## Limitations (iOS web apps)
 
