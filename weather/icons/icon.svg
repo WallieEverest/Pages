@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2a7bd0"/>
+      <stop offset="0.72" stop-color="#1a5aa6"/>
+      <stop offset="1" stop-color="#123e78"/>
+    </linearGradient>
+    <linearGradient id="sea" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3f9be8"/>
+      <stop offset="1" stop-color="#1c64b4"/>
+    </linearGradient>
+  </defs>
+  <!-- Sky (full bleed; iOS rounds the corners itself) -->
+  <rect width="512" height="512" fill="url(#sky)"/>
+
+  <!-- Sun with rays, upper left -->
+  <g fill="#ffcf45">
+    <circle cx="150" cy="150" r="60"/>
+    <g stroke="#ffcf45" stroke-width="15" stroke-linecap="round">
+      <line x1="150" y1="50" x2="150" y2="68"/>
+      <line x1="150" y1="232" x2="150" y2="250"/>
+      <line x1="50" y1="150" x2="68" y2="150"/>
+      <line x1="232" y1="150" x2="250" y2="150"/>
+      <line x1="79" y1="79" x2="92" y2="92"/>
+      <line x1="208" y1="208" x2="221" y2="221"/>
+      <line x1="79" y1="221" x2="92" y2="208"/>
+      <line x1="208" y1="92" x2="221" y2="79"/>
+    </g>
+  </g>
+
+  <!-- Cloud, upper right -->
+  <g fill="#ffffff" opacity="0.96">
+    <circle cx="372" cy="128" r="44"/>
+    <circle cx="330" cy="150" r="32"/>
+    <circle cx="418" cy="152" r="30"/>
+    <rect x="300" y="146" width="148" height="36" rx="18"/>
+  </g>
+
+  <!-- Sailboat -->
+  <rect x="262" y="118" width="9" height="262" rx="4" fill="#f4f7fb"/>
+  <path d="M276 130 L276 352 L402 352 Z" fill="#ffffff"/>
+  <path d="M256 168 L256 352 L156 352 Z" fill="#dcebfb"/>
+  <path d="M128 364 L414 364 Q404 400 372 414 L176 414 Q146 400 128 364 Z" fill="#e8543e"/>
+  <rect x="128" y="362" width="286" height="9" rx="4" fill="#ffffff"/>
+
+  <!-- Waves -->
+  <path d="M0 418 Q32 400 64 418 T128 418 T192 418 T256 418 T320 418 T384 418 T448 418 T512 418 L512 512 L0 512 Z" fill="url(#sea)"/>
+  <path d="M0 458 Q32 440 64 458 T128 458 T192 458 T256 458 T320 458 T384 458 T448 458 T512 458 L512 512 L0 512 Z" fill="#7cc4ff" opacity="0.55"/>
+</svg>

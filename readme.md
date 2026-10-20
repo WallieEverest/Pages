@@ -144,7 +144,7 @@ Not using the action? Edit `photos.json` by hand; plain strings work too: `["pho
 
 ## Updating the apps
 
-iPhone caches the apps. After changing an app's code (`index.html`, `vault.js`, `sw.js`), bump `VERSION` at the top of that app's `sw.js` (the Boating app is at `weather-v6` and the slideshow at `slideshow-v2`; increase the number), then close and reopen the app on your phone, twice if needed.
+iPhone caches the apps. After changing an app's code (`index.html`, `vault.js`, `sw.js`), bump `VERSION` at the top of that app's `sw.js` (the Boating app is at `weather-v7` and the slideshow at `slideshow-v2`; increase the number), then close and reopen the app on your phone, twice if needed.
 
 ## Limitations (iOS web apps)
 
