@@ -36,13 +36,13 @@
   html.storm { --bg1: #1a1626; --bg2: #3a3550; }
 
   .top { display: flex; gap: 8px; align-items: center; }
-  .top select {
-    flex: 1; min-width: 0; font: inherit; font-size: 15px; color: var(--text);
+  .top form { flex: 1; display: flex; min-width: 0; }
+  .top input {
+    flex: 1; min-width: 0; font: inherit; font-size: 16px; color: var(--text);
     background: var(--card); border: 1px solid var(--line); border-radius: 12px;
-    padding: 10px 12px; outline: none; -webkit-appearance: none; appearance: none; text-overflow: ellipsis;
+    padding: 10px 12px; outline: none;
   }
-  .top select:disabled { color: var(--muted); }
-  .top option { color: #000; }
+  .top input::placeholder { color: var(--muted); }
   .btn {
     font: inherit; font-size: 15px; color: var(--text); background: var(--card);
     border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; min-width: 44px;
@@ -116,7 +116,9 @@
 </head>
 <body>
   <div class="top">
-    <select id="zoneSel" aria-label="Marine zone" disabled><option>Marine zone</option></select>
+    <form id="searchForm" autocomplete="off">
+      <input id="q" type="search" placeholder="City or ZIP code" enterkeyhint="search">
+    </form>
     <button class="btn" id="locBtn" aria-label="Use my location">📍</button>
     <button class="btn" id="unitBtn" aria-label="Toggle units">°F</button>
   </div>
@@ -134,7 +136,7 @@ const store = {
   set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} }
 };
 let units = store.get('units', 'F');          // 'F' or 'C' (wind is always in knots)
-let place = store.get('place', null);         // {name, lat, lon} from GPS
+let place = store.get('place', null);         // {name, lat, lon} from GPS or search
 
 const $ = id => document.getElementById(id);
 const app = $('app');
@@ -164,6 +166,12 @@ function theme(code, day) {
 }
 
 /* ---------- Data ---------- */
+// Every request gets a time limit, so a weak signal never leaves the page waiting.
+function fetchT(url, opts = {}, ms = 10000) {
+  const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), ms);
+  return fetch(url, { ...opts, signal: ctl.signal }).finally(() => clearTimeout(t));
+}
+
 async function fetchForecast(lat, lon) {
   const p = new URLSearchParams({
     latitude: lat, longitude: lon, timezone: 'auto', forecast_days: 7,
@@ -174,15 +182,26 @@ async function fetchForecast(lat, lon) {
     hourly: 'temperature_2m,weather_code,precipitation_probability,is_day,wind_speed_10m,wind_direction_10m,wind_gusts_10m',
     daily: 'weather_code,temperature_2m_max,temperature_2m_min,sunrise,sunset,uv_index_max,precipitation_probability_max'
   });
-  const r = await fetch('https://api.open-meteo.com/v1/forecast?' + p);
+  const r = await fetchT('https://api.open-meteo.com/v1/forecast?' + p, {}, 15000);
   if (!r.ok) throw new Error('Forecast request failed (' + r.status + ')');
   return r.json();
+}
+
+// City name or ZIP code. US places first (NWS marine forecasts cover US waters), then worldwide.
+async function geocode(name) {
+  const search = async cc => {
+    const r = await fetchT('https://geocoding-api.open-meteo.com/v1/search?count=1&language=en&format=json' + cc + '&name=' + encodeURIComponent(name), {}, 10000);
+    return (await r.json()).results || [];
+  };
+  const g = (await search('&countryCode=US'))[0] || (await search(''))[0];
+  if (!g) throw new Error('No place found for "' + name + '"');
+  return { name: [g.name, g.admin1 || g.country].filter(Boolean).join(', '), lat: g.latitude, lon: g.longitude };
 }
 
 async function reverseName(lat, lon) {
   // Open-Meteo has no reverse geocoding; BigDataCloud's client endpoint is free and keyless.
   try {
-    const r = await fetch(`https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lon}&localityLanguage=en`);
+    const r = await fetchT(`https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lon}&localityLanguage=en`, {}, 6000);
     const j = await r.json();
     return [j.city || j.locality, j.principalSubdivision].filter(Boolean).join(', ') || 'My Location';
   } catch { return 'My Location'; }
@@ -193,9 +212,8 @@ async function reverseName(lat, lon) {
 const NWS_API = 'https://api.weather.gov';
 const NWS_V = 2;                               // format of the saved 'nws' entry; older copies are ignored
 const savedNws = () => { const n = store.get('nws', null); return n && n.v === NWS_V ? n : null; };
-const MARINE_ZONE = /^(AM|AN|GM|PZ|PK|PH|PM|PS|LC|LE|LH|LM|LO|LS|SL)Z\d{3}$/;
 const nwsGet = async url => {
-  const r = await fetch(url, { headers: { Accept: 'application/geo+json' } });
+  const r = await fetchT(url, { headers: { Accept: 'application/geo+json' } }, 12000);
   if (!r.ok) throw new Error('NWS request failed (' + r.status + ')');
   return r.json();
 };
@@ -223,16 +241,11 @@ async function findZone(lat, lon) {
   return null;
 }
 
-// Office and its marine zones (for the zone picker); only looked up when the location changes.
+// Forecast office for the zone; only looked up when the location changes.
 async function fetchOffice(zone) {
   const cwa = zone.cwa[0];
-  const o = await nwsGet(`${NWS_API}/offices/${cwa}`);
-  const ids = o.responsibleForecastZones.map(u => u.split('/').pop()).filter(id => MARINE_ZONE.test(id));
-  const zones = ids.length
-    ? (await nwsGet(`${NWS_API}/zones?include_geometry=false&id=${ids.join(',')}`)).features.map(f => ({ id: f.properties.id, name: f.properties.name }))
-    : [];
-  if (!zones.some(z => z.id === zone.id)) zones.unshift({ id: zone.id, name: zone.name });
-  return { cwa, name: o.name.replace(/^NWS\s+/, ''), zones };
+  const name = await nwsGet(`${NWS_API}/offices/${cwa}`).then(o => o.name.replace(/^NWS\s+/, ''), () => cwa);
+  return { cwa, name };
 }
 
 async function fetchMarine(zoneId, lat, lon, cwa) {
@@ -297,7 +310,7 @@ function ugcZones(ugc) {
 const MARINE_TOPIC = /boat|marine|mariner|small craft|seas\b|surf|rip current|waves?\b|swell|coastal waters|gale|wind|tide/i;
 async function fetchStories(cwa) {
   const home = `https://www.weather.gov/${cwa.toLowerCase()}/`;
-  const r = await fetch(home);
+  const r = await fetchT(home, {}, 12000);
   if (!r.ok) return [];
   const doc = new DOMParser().parseFromString(await r.text(), 'text/html');
   const seen = new Set();
@@ -314,7 +327,7 @@ function locate() {
     if (!navigator.geolocation) return rej(new Error('Location not available'));
     navigator.geolocation.getCurrentPosition(
       p => res({ lat: p.coords.latitude, lon: p.coords.longitude }),
-      e => rej(new Error(e.code === 1 ? 'Location permission denied. Allow location for this app in Settings to get your local marine forecast.' : 'Could not get your location.')),
+      e => rej(new Error(e.code === 1 ? 'Location permission denied. Search for a city or ZIP code instead.' : 'Could not get your location. Search for a city or ZIP code instead.')),
       { enableHighAccuracy: false, timeout: 10000, maximumAge: 10 * 60 * 1000 }
     );
   });
@@ -362,7 +375,6 @@ function render(d, name, fetchedAt) {
       <div class="updated">Updated ${new Date(fetchedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</div>
     </section>
     <section class="card"><h2>Hourly</h2><div class="hours">${hours}</div></section>
-    <div id="nws"></div>
     <section class="card"><h2>7-Day Forecast</h2>${days}</section>
     <div class="grid">
       <section class="card"><h2>Wind</h2><div class="metric">${wind} kt</div><div class="sub">from ${compass(c.wind_direction_10m)}${gust > wind ? ` · gusts ${gust} kt` : ''}</div></section>
@@ -371,9 +383,19 @@ function render(d, name, fetchedAt) {
       <section class="card"><h2>UV Index</h2><div class="metric">${Math.round(dy.uv_index_max[0])}</div><div class="sub">today's max</div></section>
       <section class="card"><h2>Sunrise</h2><div class="metric">${hhmm(dy.sunrise[0])}</div></section>
       <section class="card"><h2>Sunset</h2><div class="metric">${hhmm(dy.sunset[0])}</div></section>
-    </div>`;
+    </div>
+    <div id="nws"></div>`;
   const n = savedNws();
   if (n && n.lat === place.lat && n.lon === place.lon) renderNws(n);
+  else renderNwsStatus();
+}
+
+// The marine forecast is the slowest part (several NWS requests), so it sits at the bottom
+// and shows its progress here until the data arrives.
+let nwsStatus = 'Loading marine forecast…';
+function renderNwsStatus() {
+  const box = $('nws');
+  if (box) box.innerHTML = `<section class="card"><h2>Marine Forecast</h2><div class="noalerts">${escapeHtml(nwsStatus)}</div></section>`;
 }
 
 // NWS text is hard-wrapped at ~66 columns: rejoin lines into paragraphs and bold the "* WHAT..." labels.
@@ -382,15 +404,7 @@ function nwsText(s) {
     .map(p => '<p>' + escapeHtml(p).replace(/^\* ([A-Z][A-Z /]+)\.\.\./, (m, k) => `<b>${k[0] + k.slice(1).toLowerCase()}:</b> `) + '</p>').join('');
 }
 
-function renderZonePicker(n) {
-  const sel = $('zoneSel');
-  if (!n || !n.zone) { sel.innerHTML = '<option>No NWS marine zone nearby</option>'; sel.disabled = true; return; }
-  sel.innerHTML = n.office.zones.map(z => `<option value="${z.id}"${z.id === n.zone.id ? ' selected' : ''}>${escapeHtml(z.name)}</option>`).join('');
-  sel.disabled = n.office.zones.length < 2;
-}
-
 function renderNws(n) {
-  renderZonePicker(n);
   const box = $('nws');
   if (!box) return;
   if (!n.zone) { box.innerHTML = '<section class="card"><h2>Marine Forecast</h2><div class="noalerts">No National Weather Service marine zone within about 50 km of this location.</div></section>'; return; }
@@ -421,35 +435,40 @@ function escapeHtml(s) { return String(s).replace(/[&<>"']/g, ch => ({ '&':'&amp
 
 /* ---------- Flow ---------- */
 async function load() {
-  if (!place) return showMsg('Tap 📍 to use your location.');
+  if (!place) return showMsg('Tap 📍 to use your location, or search for a city or ZIP code.');
   // Show cached data instantly, then refresh
   const cached = store.get('cache', null);
   if (cached && cached.units === units && cached.lat === place.lat && cached.lon === place.lon) {
     render(cached.data, place.name, cached.at);
   } else if (!app.querySelector('.hero')) {
-    app.innerHTML = '<div class="msg"><span class="spin">◌</span></div>';
+    app.innerHTML = '<div class="msg"><span class="spin">◌</span><br>Getting the forecast…</div>';
   }
-  loadNws();
+  const p = place;
   try {
-    const data = await fetchForecast(place.lat, place.lon);
+    const data = await fetchForecast(p.lat, p.lon);
+    if (place !== p) return;   // location changed while loading
     const at = Date.now();
-    store.set('cache', { units, lat: place.lat, lon: place.lon, at, data });
-    render(data, place.name, at);
+    store.set('cache', { units, lat: p.lat, lon: p.lon, at, data });
+    render(data, p.name, at);
   } catch (e) {
-    if (!cached) showMsg(navigator.onLine ? e.message : 'You are offline and no forecast is saved yet.');
+    if (place === p && !app.querySelector('.hero')) showMsg(navigator.onLine
+      ? 'Could not get the forecast (weak signal or the service is not responding). Tap 📍 to try again.'
+      : 'You are offline and no forecast is saved yet.');
   }
+  // The marine forecast loads after the main forecast, so it never delays it on a weak signal.
+  if (place === p) loadNws();
 }
 
-// Runs alongside the forecast; the saved copy is shown by render(), so this only refreshes it.
-// The zone is found once per location; a zone picked from the list is kept until the location changes.
-async function loadNws(zoneId) {
+// Runs after the forecast; the saved copy is shown by render(), so this only refreshes it.
+// The zone and office are found once per location.
+async function loadNws() {
   const p = place, old = savedNws();
   const same = old && old.lat === p.lat && old.lon === p.lon;
+  nwsStatus = 'Loading marine forecast…';
   try {
     let zone, office;
     if (same && old.zone) {
-      office = old.office;
-      zone = office.zones.find(z => z.id === (zoneId || old.zone.id)) || old.zone;
+      ({ zone, office } = old);
     } else if (same && !old.zone && Date.now() - old.at < 24 * 3600 * 1000) {
       return;                  // no zone near this location; check again tomorrow
     } else {
@@ -463,21 +482,47 @@ async function loadNws(zoneId) {
     const n = { v: NWS_V, lat: p.lat, lon: p.lon, at: Date.now(), zone, office, ...m };
     store.set('nws', n);
     renderNws(n);
-  } catch {}                   // offline or NWS down: keep showing the saved copy
+  } catch {                    // offline or NWS down: keep showing the saved copy, if any
+    if (place !== p || same) return;
+    nwsStatus = 'Marine forecast unavailable right now (no signal or NWS not responding). It will try again when you reopen the app.';
+    renderNwsStatus();
+  }
 }
 
 async function useMyLocation() {
-  showMsg('Finding your location…');
+  if (!app.querySelector('.hero')) showMsg('Finding your location…');
   try {
     const { lat, lon } = await locate();
-    place = { name: await reverseName(lat, lon), lat, lon };
-    store.set('place', place);
+    // Show the forecast right away; the place name fills in when the lookup answers.
+    const near = place && Math.abs(place.lat - lat) < 0.05 && Math.abs(place.lon - lon) < 0.05;
+    const p = place = { name: near ? place.name : 'My Location', lat, lon };
+    store.set('place', p);
+    if (!near) app.innerHTML = '<div class="msg"><span class="spin">◌</span><br>Getting the forecast…</div>';
     load();
-  } catch (e) { showMsg(e.message); }
+    const name = await reverseName(lat, lon);
+    if (place !== p || name === 'My Location') return;
+    p.name = name;
+    store.set('place', p);
+    const el = app.querySelector('.place');
+    if (el) el.textContent = name;
+  } catch (e) { if (!app.querySelector('.hero')) showMsg(e.message); }
 }
 
+$('searchForm').addEventListener('submit', async ev => {
+  ev.preventDefault();
+  const q = $('q').value.trim();
+  if (!q) return;
+  $('q').blur();
+  app.innerHTML = '<div class="msg"><span class="spin">◌</span><br>Finding ' + escapeHtml(q) + '…</div>';
+  try {
+    place = await geocode(q);
+    store.set('place', place);
+    $('q').value = '';
+    load();
+  } catch (e) { showMsg(e.name === 'AbortError' ? 'The place search is not responding. Try again.' : e.message); }
+});
+
 $('locBtn').addEventListener('click', useMyLocation);
-$('zoneSel').addEventListener('change', e => loadNws(e.target.value));
 
 $('unitBtn').textContent = '°' + units;
 $('unitBtn').addEventListener('click', () => {
